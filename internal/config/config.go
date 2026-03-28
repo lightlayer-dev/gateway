@@ -81,6 +81,7 @@ type PluginsConfig struct {
 	RateLimits RateLimitsConfig `yaml:"rate_limits"`
 	Analytics  AnalyticsConfig  `yaml:"analytics"`
 	Security   SecurityConfig   `yaml:"security"`
+	AgentsTxt  AgentsTxtConfig  `yaml:"agents_txt"`
 }
 
 // DiscoveryConfig controls agent discovery endpoint serving.
@@ -172,6 +173,39 @@ type AdminConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	Port      int    `yaml:"port"`
 	AuthToken string `yaml:"auth_token,omitempty"`
+}
+
+// AgentsTxtConfig controls per-agent access rules via agents.txt.
+type AgentsTxtConfig struct {
+	Enabled      bool              `yaml:"enabled"`
+	Rules        []AgentsTxtRule   `yaml:"rules,omitempty"`
+	SiteName     string            `yaml:"site_name,omitempty"`
+	Contact      string            `yaml:"contact,omitempty"`
+	DiscoveryURL string            `yaml:"discovery_url,omitempty"`
+}
+
+// AgentsTxtRule defines access rules for a specific agent pattern.
+type AgentsTxtRule struct {
+	Agent              string             `yaml:"agent"`
+	Allow              []string           `yaml:"allow,omitempty"`
+	Deny               []string           `yaml:"deny,omitempty"`
+	RateLimit          *AgentsTxtRateLimit `yaml:"rate_limit,omitempty"`
+	PreferredInterface string             `yaml:"preferred_interface,omitempty"` // rest, mcp, graphql, a2a
+	Auth               *AgentsTxtAuth     `yaml:"auth,omitempty"`
+	Description        string             `yaml:"description,omitempty"`
+}
+
+// AgentsTxtRateLimit declares a rate limit in agents.txt.
+type AgentsTxtRateLimit struct {
+	Max           int `yaml:"max"`
+	WindowSeconds int `yaml:"window_seconds,omitempty"` // default: 60
+}
+
+// AgentsTxtAuth declares auth requirements in agents.txt.
+type AgentsTxtAuth struct {
+	Type     string `yaml:"type"`               // bearer, api_key, oauth2, none
+	Endpoint string `yaml:"endpoint,omitempty"`
+	DocsURL  string `yaml:"docs_url,omitempty"`
 }
 
 // LoadConfig reads a YAML config file, applies defaults, applies environment
