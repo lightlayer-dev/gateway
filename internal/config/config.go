@@ -102,9 +102,28 @@ type Capability struct {
 
 // IdentityConfig controls agent identity verification.
 type IdentityConfig struct {
-	Enabled        bool     `yaml:"enabled"`
-	Mode           string   `yaml:"mode"` // log, warn, enforce
-	TrustedIssuers []string `yaml:"trusted_issuers,omitempty"`
+	Enabled            bool              `yaml:"enabled"`
+	Mode               string            `yaml:"mode"` // log, warn, enforce
+	TrustedIssuers     []string          `yaml:"trusted_issuers,omitempty"`
+	Audience           []string          `yaml:"audience,omitempty"`
+	TrustedDomains     []string          `yaml:"trusted_domains,omitempty"`
+	Policies           []AuthzPolicy     `yaml:"policies,omitempty"`
+	DefaultPolicy      string            `yaml:"default_policy,omitempty"` // allow, deny
+	HeaderName         string            `yaml:"header_name,omitempty"`
+	TokenPrefix        string            `yaml:"token_prefix,omitempty"`
+	ClockSkewSeconds   int               `yaml:"clock_skew_seconds,omitempty"`
+	MaxLifetimeSeconds int               `yaml:"max_lifetime_seconds,omitempty"`
+}
+
+// AuthzPolicy defines an authorization rule for agent access.
+type AuthzPolicy struct {
+	Name           string   `yaml:"name"`
+	AgentPattern   string   `yaml:"agent_pattern,omitempty"`
+	TrustDomains   []string `yaml:"trust_domains,omitempty"`
+	RequiredScopes []string `yaml:"required_scopes,omitempty"`
+	Methods        []string `yaml:"methods,omitempty"`
+	Paths          []string `yaml:"paths,omitempty"`
+	AllowDelegated *bool    `yaml:"allow_delegated,omitempty"`
 }
 
 // PaymentsConfig controls x402 payment handling.

@@ -138,7 +138,7 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 	return []plugins.PluginConfig{
 		{Name: "security", Enabled: cfg.Plugins.Security.Enabled},
 		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled},
-		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled},
+		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled, Config: identityConfigMap(cfg)},
 		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
 		{Name: "payments", Enabled: cfg.Plugins.Payments.Enabled},
 		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled},
@@ -194,6 +194,63 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  Ready to proxy agent traffic.")
 	fmt.Fprintln(w)
+}
+
+// identityConfigMap converts IdentityConfig into a generic map for the plugin.
+func identityConfigMap(cfg *config.Config) map[string]interface{} {
+	ic := cfg.Plugins.Identity
+	m := map[string]interface{}{
+		"mode":           ic.Mode,
+		"trusted_issuers": ic.TrustedIssuers,
+	}
+	if len(ic.Audience) > 0 {
+		m["audience"] = ic.Audience
+	}
+	if len(ic.TrustedDomains) > 0 {
+		m["trusted_domains"] = ic.TrustedDomains
+	}
+	if ic.DefaultPolicy != "" {
+		m["default_policy"] = ic.DefaultPolicy
+	}
+	if ic.HeaderName != "" {
+		m["header_name"] = ic.HeaderName
+	}
+	if ic.TokenPrefix != "" {
+		m["token_prefix"] = ic.TokenPrefix
+	}
+	if ic.ClockSkewSeconds != 0 {
+		m["clock_skew_seconds"] = ic.ClockSkewSeconds
+	}
+	if ic.MaxLifetimeSeconds != 0 {
+		m["max_lifetime_seconds"] = ic.MaxLifetimeSeconds
+	}
+	if len(ic.Policies) > 0 {
+		policies := make([]map[string]interface{}, len(ic.Policies))
+		for i, p := range ic.Policies {
+			pol := map[string]interface{}{"name": p.Name}
+			if p.AgentPattern != "" {
+				pol["agent_pattern"] = p.AgentPattern
+			}
+			if len(p.TrustDomains) > 0 {
+				pol["trust_domains"] = p.TrustDomains
+			}
+			if len(p.RequiredScopes) > 0 {
+				pol["required_scopes"] = p.RequiredScopes
+			}
+			if len(p.Methods) > 0 {
+				pol["methods"] = p.Methods
+			}
+			if len(p.Paths) > 0 {
+				pol["paths"] = p.Paths
+			}
+			if p.AllowDelegated != nil {
+				pol["allow_delegated"] = *p.AllowDelegated
+			}
+			policies[i] = pol
+		}
+		m["policies"] = policies
+	}
+	return m
 }
 
 func analyticsDetail(cfg *config.Config) string {
