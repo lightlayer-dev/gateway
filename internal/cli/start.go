@@ -55,6 +55,22 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 		Handler: p,
 	}
 
+	// Admin server.
+	var adminSrv *http.Server
+	if cfg.Admin.Enabled {
+		adminAddr := fmt.Sprintf(":%d", cfg.Admin.Port)
+		adminSrv = &http.Server{
+			Addr:    adminAddr,
+			Handler: adminHandler(),
+		}
+		go func() {
+			slog.Info("admin listening", "addr", adminAddr)
+			if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("admin server error", "error", err)
+			}
+		}()
+	}
+
 	// Graceful shutdown on SIGINT/SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -68,15 +84,49 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 	select {
 	case <-ctx.Done():
 		slog.Info("shutting down gracefully...")
-		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+		// 30-second timeout for in-flight requests.
+		shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return srv.Shutdown(shutCtx)
+
+		// Shut down both servers concurrently.
+		var shutdownErr error
+		if adminSrv != nil {
+			if err := adminSrv.Shutdown(shutCtx); err != nil {
+				slog.Error("admin shutdown error", "error", err)
+				shutdownErr = err
+			}
+		}
+		if err := srv.Shutdown(shutCtx); err != nil {
+			slog.Error("proxy shutdown error", "error", err)
+			shutdownErr = err
+		}
+
+		slog.Info("shutdown complete")
+		return shutdownErr
 	case err := <-errCh:
+		// If the proxy server fails, clean up admin too.
+		if adminSrv != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			adminSrv.Shutdown(shutCtx)
+		}
 		if err != nil && err != http.ErrServerClosed {
 			return err
 		}
 		return nil
 	}
+}
+
+// adminHandler returns a basic admin HTTP handler with health endpoint.
+func adminHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"status":"ok"}`)
+	})
+	return mux
 }
 
 func printBanner(cmd *cobra.Command, cfg *config.Config) {
