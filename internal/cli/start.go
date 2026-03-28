@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/lightlayer-dev/gateway/internal/admin"
 	"github.com/lightlayer-dev/gateway/internal/config"
 	"github.com/lightlayer-dev/gateway/internal/plugins"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/a2a"
@@ -18,6 +21,7 @@ import (
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/oauth2"
 	"github.com/lightlayer-dev/gateway/internal/proxy"
+	"github.com/lightlayer-dev/gateway/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -38,6 +42,26 @@ func runStart(cmd *cobra.Command, args []string) error {
 	return startServer(cmd, startConfigPath, false)
 }
 
+// gateway holds the running gateway state for hot reload.
+type gateway struct {
+	mu       sync.Mutex
+	cmd      *cobra.Command
+	cfgPath  string
+	verbose  bool
+
+	cfg      *config.Config
+	pipeline *plugins.Pipeline
+	proxySrv *http.Server
+	adminSrv *admin.Server
+	store    store.Store
+	watcher  *config.Watcher
+
+	// handler is atomically swapped on reload.
+	handler atomic.Value // holds http.Handler
+
+	reloading sync.Mutex
+}
+
 func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 	if verbose {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
@@ -48,92 +72,216 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 		return err
 	}
 
+	gw := &gateway{
+		cmd:     cmd,
+		cfgPath: cfgPath,
+		verbose: verbose,
+		cfg:     cfg,
+	}
+
+	// Open analytics store if configured.
+	if cfg.Plugins.Analytics.Enabled && cfg.Plugins.Analytics.DBPath != "" {
+		st, err := store.NewSQLiteStore(cfg.Plugins.Analytics.DBPath)
+		if err != nil {
+			slog.Warn("failed to open analytics store, continuing without", "error", err)
+		} else {
+			gw.store = st
+		}
+	}
+
+	// Build proxy and pipeline.
 	p, err := proxy.NewProxy(cfg)
 	if err != nil {
 		return fmt.Errorf("creating proxy: %w", err)
 	}
 
-	// Build the plugin pipeline from config and wrap the proxy.
 	pipeline, err := plugins.BuildPipeline(pluginConfigs(cfg))
 	if err != nil {
 		return fmt.Errorf("building plugin pipeline: %w", err)
 	}
+	gw.pipeline = pipeline
+
 	handler := pipeline.Wrap(p)
+	gw.handler.Store(handler)
 
 	printBanner(cmd, cfg)
 
+	// Start proxy server.
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Listen.Host, cfg.Gateway.Listen.Port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+	gw.proxySrv = &http.Server{
+		Addr: addr,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gw.handler.Load().(http.Handler).ServeHTTP(w, r)
+		}),
 	}
 
-	// Admin server.
-	var adminSrv *http.Server
+	// Start admin server.
 	if cfg.Admin.Enabled {
-		adminAddr := fmt.Sprintf(":%d", cfg.Admin.Port)
-		adminSrv = &http.Server{
-			Addr:    adminAddr,
-			Handler: adminHandler(),
+		gw.adminSrv = admin.NewServer(cfg, pipeline, gw.store, Version)
+		gw.adminSrv.ConfigPath = cfgPath
+		gw.adminSrv.ReloadFunc = gw.reload
+		if err := gw.adminSrv.Start(); err != nil {
+			slog.Error("admin server start failed", "error", err)
 		}
-		go func() {
-			slog.Info("admin listening", "addr", adminAddr)
-			if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				slog.Error("admin server error", "error", err)
-			}
-		}()
 	}
 
-	// Graceful shutdown on SIGINT/SIGTERM.
+	// Start config file watcher for auto-reload.
+	if verbose {
+		watcher, err := config.NewWatcher(cfgPath, gw.reload)
+		if err != nil {
+			slog.Warn("config file watcher failed to start", "error", err)
+		} else {
+			gw.watcher = watcher
+			watcher.Start()
+			slog.Debug("config file watcher started", "path", cfgPath)
+		}
+	}
+
+	// Set up signal handling: SIGINT/SIGTERM for shutdown, SIGHUP for reload.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	sighupCh := make(chan os.Signal, 1)
+	signal.Notify(sighupCh, syscall.SIGHUP)
 
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("proxy listening", "addr", addr)
-		errCh <- srv.ListenAndServe()
+		errCh <- gw.proxySrv.ListenAndServe()
 	}()
 
-	select {
-	case <-ctx.Done():
-		slog.Info("shutting down gracefully...")
-
-		// 30-second timeout for in-flight requests.
-		shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		// Shut down both servers concurrently.
-		var shutdownErr error
-		if adminSrv != nil {
-			if err := adminSrv.Shutdown(shutCtx); err != nil {
-				slog.Error("admin shutdown error", "error", err)
-				shutdownErr = err
+	// Event loop.
+	for {
+		select {
+		case <-sighupCh:
+			slog.Info("received SIGHUP, reloading config...")
+			if err := gw.reload(cfgPath); err != nil {
+				slog.Error("SIGHUP reload failed", "error", err)
 			}
+
+		case <-ctx.Done():
+			return gw.shutdown()
+
+		case err := <-errCh:
+			if err != nil && err != http.ErrServerClosed {
+				gw.cleanup()
+				return err
+			}
+			return nil
 		}
-		if err := srv.Shutdown(shutCtx); err != nil {
-			slog.Error("proxy shutdown error", "error", err)
+	}
+}
+
+// reload performs a hot reload of config and plugins.
+func (gw *gateway) reload(cfgPath string) error {
+	gw.reloading.Lock()
+	defer gw.reloading.Unlock()
+
+	slog.Info("reloading config", "path", cfgPath)
+
+	newCfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	// Build new proxy.
+	p, err := proxy.NewProxy(newCfg)
+	if err != nil {
+		return fmt.Errorf("create proxy: %w", err)
+	}
+
+	// Build new pipeline.
+	newPipeline, err := plugins.BuildPipeline(pluginConfigs(newCfg))
+	if err != nil {
+		return fmt.Errorf("build pipeline: %w", err)
+	}
+
+	// Atomically swap the handler.
+	newHandler := newPipeline.Wrap(p)
+	gw.handler.Store(newHandler)
+
+	// Close old pipeline.
+	oldPipeline := gw.pipeline
+	gw.pipeline = newPipeline
+	gw.cfg = newCfg
+
+	if oldPipeline != nil {
+		if err := oldPipeline.Close(); err != nil {
+			slog.Warn("closing old pipeline", "error", err)
+		}
+	}
+
+	// Update admin server references.
+	if gw.adminSrv != nil {
+		gw.adminSrv.SetConfig(newCfg)
+		gw.adminSrv.SetPipeline(newPipeline)
+	}
+
+	slog.Info("config reloaded successfully")
+	return nil
+}
+
+// shutdown gracefully stops all components.
+func (gw *gateway) shutdown() error {
+	slog.Info("shutting down gracefully...")
+
+	shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var shutdownErr error
+
+	// Stop file watcher.
+	if gw.watcher != nil {
+		gw.watcher.Stop()
+	}
+
+	// Shutdown admin server.
+	if gw.adminSrv != nil {
+		if err := gw.adminSrv.Shutdown(shutCtx); err != nil {
+			slog.Error("admin shutdown error", "error", err)
 			shutdownErr = err
 		}
+	}
 
-		// Close plugin pipeline.
-		if err := pipeline.Close(); err != nil {
+	// Shutdown proxy server.
+	if err := gw.proxySrv.Shutdown(shutCtx); err != nil {
+		slog.Error("proxy shutdown error", "error", err)
+		shutdownErr = err
+	}
+
+	// Close plugins.
+	if gw.pipeline != nil {
+		if err := gw.pipeline.Close(); err != nil {
 			slog.Error("plugin pipeline close error", "error", err)
 		}
+	}
 
-		slog.Info("shutdown complete")
-		return shutdownErr
-	case err := <-errCh:
-		// If the proxy server fails, clean up admin too.
-		if adminSrv != nil {
-			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			adminSrv.Shutdown(shutCtx)
+	// Close store.
+	if gw.store != nil {
+		if err := gw.store.Close(); err != nil {
+			slog.Error("store close error", "error", err)
 		}
-		pipeline.Close()
-		if err != nil && err != http.ErrServerClosed {
-			return err
-		}
-		return nil
+	}
+
+	slog.Info("shutdown complete")
+	return shutdownErr
+}
+
+// cleanup releases resources without graceful shutdown.
+func (gw *gateway) cleanup() {
+	if gw.watcher != nil {
+		gw.watcher.Stop()
+	}
+	if gw.adminSrv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gw.adminSrv.Shutdown(ctx)
+	}
+	if gw.pipeline != nil {
+		gw.pipeline.Close()
+	}
+	if gw.store != nil {
+		gw.store.Close()
 	}
 }
 
@@ -156,17 +304,6 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 	}
 }
 
-// adminHandler returns a basic admin HTTP handler with health endpoint.
-func adminHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"ok"}`)
-	})
-	return mux
-}
-
 func printBanner(cmd *cobra.Command, cfg *config.Config) {
 	w := cmd.OutOrStdout()
 
@@ -185,7 +322,7 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 		detail  string
 	}
 
-	plugins := []pluginInfo{
+	pluginList := []pluginInfo{
 		{"discovery", cfg.Plugins.Discovery.Enabled, "serving /.well-known/ai, /agents.txt, /llms.txt"},
 		{"identity", cfg.Plugins.Identity.Enabled, fmt.Sprintf("%s mode", cfg.Plugins.Identity.Mode)},
 		{"rate_limits", cfg.Plugins.RateLimits.Enabled, fmt.Sprintf("%d req/%s default", cfg.Plugins.RateLimits.Default.Requests, cfg.Plugins.RateLimits.Default.Window.Duration)},
@@ -199,7 +336,7 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 		{"api_keys", cfg.Plugins.APIKeys.Enabled, "scoped API key auth"},
 	}
 
-	for _, p := range plugins {
+	for _, p := range pluginList {
 		if p.enabled {
 			fmt.Fprintf(w, "    ✓ %-14s %s\n", p.name, p.detail)
 		} else {
@@ -216,7 +353,7 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 func identityConfigMap(cfg *config.Config) map[string]interface{} {
 	ic := cfg.Plugins.Identity
 	m := map[string]interface{}{
-		"mode":           ic.Mode,
+		"mode":            ic.Mode,
 		"trusted_issuers": ic.TrustedIssuers,
 	}
 	if len(ic.Audience) > 0 {
