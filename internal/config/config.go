@@ -131,14 +131,22 @@ type AuthzPolicy struct {
 type PaymentsConfig struct {
 	Enabled     bool           `yaml:"enabled"`
 	Facilitator string         `yaml:"facilitator,omitempty"`
+	PayTo       string         `yaml:"pay_to,omitempty"`
+	Network     string         `yaml:"network,omitempty"`
+	Scheme      string         `yaml:"scheme,omitempty"`
 	Routes      []PaymentRoute `yaml:"routes,omitempty"`
 }
 
 // PaymentRoute defines pricing for a specific path pattern.
 type PaymentRoute struct {
-	Path     string `yaml:"path"`
-	Price    string `yaml:"price"`
-	Currency string `yaml:"currency"`
+	Path               string `yaml:"path"`
+	Price              string `yaml:"price"`
+	Currency           string `yaml:"currency,omitempty"`
+	Network            string `yaml:"network,omitempty"`
+	PayTo              string `yaml:"pay_to,omitempty"`
+	Scheme             string `yaml:"scheme,omitempty"`
+	MaxTimeoutSeconds  int    `yaml:"max_timeout_seconds,omitempty"`
+	Description        string `yaml:"description,omitempty"`
 }
 
 // RateLimitsConfig controls per-agent rate limiting.
