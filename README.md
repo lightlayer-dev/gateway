@@ -451,4 +451,4 @@ This means: use it however you want for your own APIs. The only restriction is y
 
 For commercial licensing inquiries, contact isaac@lightlayer.dev.
 
-© 2026 LightLayer Inc.
+© 2026 Flockly, Inc.
