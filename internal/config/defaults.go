@@ -28,11 +28,6 @@ func ApplyDefaults(cfg *Config) {
 		cfg.Admin.Port = 9090
 	}
 
-	// Identity mode defaults
-	if cfg.Plugins.Identity.Enabled && cfg.Plugins.Identity.Mode == "" {
-		cfg.Plugins.Identity.Mode = "log"
-	}
-
 	// Analytics enabled by default (log to stdout via empty log_file)
 	// All other plugins disabled by default — their Enabled field zero-value is false.
 }

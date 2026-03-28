@@ -34,11 +34,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/config/export", s.handleExportConfig)
 	mux.HandleFunc("POST /api/config/import", s.handleImportConfig)
 
-	// API keys
-	mux.HandleFunc("POST /api/keys", s.handleCreateKey)
-	mux.HandleFunc("GET /api/keys", s.handleListKeys)
-	mux.HandleFunc("DELETE /api/keys/{id}", s.handleDeleteKey)
-
 	// Discovery preview
 	mux.HandleFunc("GET /api/discovery/preview", s.handleDiscoveryPreview)
 
@@ -235,9 +230,6 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	// Sanitize sensitive fields.
 	sanitized := *cfg
 	sanitized.Admin.AuthToken = ""
-	if sanitized.Plugins.OAuth2.ClientSecret != "" {
-		sanitized.Plugins.OAuth2.ClientSecret = "***"
-	}
 	if sanitized.Plugins.Analytics.APIKey != "" {
 		sanitized.Plugins.Analytics.APIKey = "***"
 	}
@@ -429,99 +421,6 @@ func (s *Server) handleImportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "imported and reloaded"})
-}
-
-// ── API Keys ─────────────────────────────────────────────────────────────
-
-func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
-	// API keys are managed by the apikeys plugin. The admin API provides
-	// a thin proxy for creating keys stored in the config.
-	var req struct {
-		ID        string                 `json:"id"`
-		Scopes    []string               `json:"scopes"`
-		ExpiresAt string                 `json:"expires_at,omitempty"`
-		CompanyID string                 `json:"company_id,omitempty"`
-		UserID    string                 `json:"user_id,omitempty"`
-		Metadata  map[string]interface{} `json:"metadata,omitempty"`
-	}
-
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
-	}
-
-	if req.ID == "" || len(req.Scopes) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "id and scopes are required",
-		})
-		return
-	}
-
-	// Store in config.
-	cfg := s.GetConfig()
-	newKey := config.APIKeyConfig{
-		ID:        req.ID,
-		Scopes:    req.Scopes,
-		ExpiresAt: req.ExpiresAt,
-		CompanyID: req.CompanyID,
-		UserID:    req.UserID,
-		Metadata:  req.Metadata,
-	}
-	cfg.Plugins.APIKeys.Keys = append(cfg.Plugins.APIKeys.Keys, newKey)
-	s.SetConfig(cfg)
-
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"key": newKey,
-	})
-}
-
-func (s *Server) handleListKeys(w http.ResponseWriter, r *http.Request) {
-	cfg := s.GetConfig()
-
-	// Return keys with secrets masked.
-	keys := make([]map[string]interface{}, len(cfg.Plugins.APIKeys.Keys))
-	for i, k := range cfg.Plugins.APIKeys.Keys {
-		keys[i] = map[string]interface{}{
-			"id":         k.ID,
-			"scopes":     k.Scopes,
-			"expires_at": k.ExpiresAt,
-			"company_id": k.CompanyID,
-			"user_id":    k.UserID,
-		}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"keys": keys,
-	})
-}
-
-func (s *Server) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "key id required"})
-		return
-	}
-
-	cfg := s.GetConfig()
-	found := false
-	filtered := make([]config.APIKeyConfig, 0, len(cfg.Plugins.APIKeys.Keys))
-	for _, k := range cfg.Plugins.APIKeys.Keys {
-		if k.ID == id {
-			found = true
-			continue
-		}
-		filtered = append(filtered, k)
-	}
-
-	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "key not found"})
-		return
-	}
-
-	cfg.Plugins.APIKeys.Keys = filtered
-	s.SetConfig(cfg)
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // ── Discovery Preview ─────────────────────────────────────────────────────

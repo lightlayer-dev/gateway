@@ -76,15 +76,12 @@ type OriginConfig struct {
 // PluginsConfig groups all plugin configurations.
 type PluginsConfig struct {
 	Discovery       DiscoveryConfig       `yaml:"discovery"`
-	Identity        IdentityConfig        `yaml:"identity"`
 	Payments        PaymentsConfig        `yaml:"payments"`
 	RateLimits      RateLimitsConfig      `yaml:"rate_limits"`
 	Analytics       AnalyticsConfig       `yaml:"analytics"`
 	Security        SecurityConfig        `yaml:"security"`
 	AgentsTxt       AgentsTxtConfig       `yaml:"agents_txt"`
-	OAuth2          OAuth2Config          `yaml:"oauth2"`
 	MCP             MCPConfig             `yaml:"mcp"`
-	APIKeys         APIKeysConfig         `yaml:"api_keys"`
 	A2A             A2AConfig             `yaml:"a2a"`
 	AgUI            AgUIConfig            `yaml:"ag_ui"`
 	AgentOnboarding AgentOnboardingConfig `yaml:"agent_onboarding"`
@@ -105,32 +102,6 @@ type Capability struct {
 	Description string   `yaml:"description"`
 	Methods     []string `yaml:"methods"`
 	Paths       []string `yaml:"paths"`
-}
-
-// IdentityConfig controls agent identity verification.
-type IdentityConfig struct {
-	Enabled            bool              `yaml:"enabled"`
-	Mode               string            `yaml:"mode"` // log, warn, enforce
-	TrustedIssuers     []string          `yaml:"trusted_issuers,omitempty"`
-	Audience           []string          `yaml:"audience,omitempty"`
-	TrustedDomains     []string          `yaml:"trusted_domains,omitempty"`
-	Policies           []AuthzPolicy     `yaml:"policies,omitempty"`
-	DefaultPolicy      string            `yaml:"default_policy,omitempty"` // allow, deny
-	HeaderName         string            `yaml:"header_name,omitempty"`
-	TokenPrefix        string            `yaml:"token_prefix,omitempty"`
-	ClockSkewSeconds   int               `yaml:"clock_skew_seconds,omitempty"`
-	MaxLifetimeSeconds int               `yaml:"max_lifetime_seconds,omitempty"`
-}
-
-// AuthzPolicy defines an authorization rule for agent access.
-type AuthzPolicy struct {
-	Name           string   `yaml:"name"`
-	AgentPattern   string   `yaml:"agent_pattern,omitempty"`
-	TrustDomains   []string `yaml:"trust_domains,omitempty"`
-	RequiredScopes []string `yaml:"required_scopes,omitempty"`
-	Methods        []string `yaml:"methods,omitempty"`
-	Paths          []string `yaml:"paths,omitempty"`
-	AllowDelegated *bool    `yaml:"allow_delegated,omitempty"`
 }
 
 // PaymentsConfig controls x402 payment handling.
@@ -261,22 +232,6 @@ type AgentsTxtAuth struct {
 	DocsURL  string `yaml:"docs_url,omitempty"`
 }
 
-// OAuth2Config controls the OAuth2 authorization server plugin.
-type OAuth2Config struct {
-	Enabled               bool              `yaml:"enabled"`
-	Issuer                string            `yaml:"issuer,omitempty"`
-	ClientID              string            `yaml:"client_id,omitempty"`
-	ClientSecret          string            `yaml:"client_secret,omitempty"`
-	AuthorizationEndpoint string            `yaml:"authorization_endpoint,omitempty"`
-	TokenEndpoint         string            `yaml:"token_endpoint,omitempty"`
-	RedirectURI           string            `yaml:"redirect_uri,omitempty"`
-	Scopes                map[string]string `yaml:"scopes,omitempty"`
-	TokenTTL              int               `yaml:"token_ttl,omitempty"`       // seconds, default 3600
-	RefreshTokenTTL       int               `yaml:"refresh_token_ttl,omitempty"` // seconds, default 86400
-	CodeTTL               int               `yaml:"code_ttl,omitempty"`        // seconds, default 600
-	Audience              string            `yaml:"audience,omitempty"`
-}
-
 // MCPConfig controls the MCP JSON-RPC server plugin.
 type MCPConfig struct {
 	Enabled      bool             `yaml:"enabled"`
@@ -292,25 +247,6 @@ type MCPToolConfig struct {
 	Name        string                 `yaml:"name"`
 	Description string                 `yaml:"description"`
 	InputSchema map[string]interface{} `yaml:"input_schema,omitempty"`
-}
-
-// APIKeysConfig controls the scoped API key authentication plugin.
-type APIKeysConfig struct {
-	Enabled    bool             `yaml:"enabled"`
-	Store      string           `yaml:"store,omitempty"` // "memory" or "sqlite", default: "memory"
-	Prefix     string           `yaml:"prefix,omitempty"` // key prefix, default: "llgw_"
-	AdminPath  string           `yaml:"admin_path,omitempty"` // admin API path, default: "/api/keys"
-	Keys       []APIKeyConfig   `yaml:"keys,omitempty"` // pre-configured keys
-}
-
-// APIKeyConfig defines a pre-configured API key.
-type APIKeyConfig struct {
-	ID        string                 `yaml:"id"`
-	CompanyID string                 `yaml:"company_id,omitempty"`
-	UserID    string                 `yaml:"user_id,omitempty"`
-	Scopes    []string               `yaml:"scopes"`
-	ExpiresAt string                 `yaml:"expires_at,omitempty"` // RFC 3339
-	Metadata  map[string]interface{} `yaml:"metadata,omitempty"`
 }
 
 // A2AConfig controls the A2A protocol server plugin.

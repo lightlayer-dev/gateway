@@ -31,14 +31,7 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
 
    **NOTE:** agent-layer only implements Agent Card generation (discovery). The gateway goes further — see "Full A2A Protocol Support" below.
 
-4. **Agent Identity (IETF draft-klrc-aiagent-auth-00)** — not just JWT verification, but full SPIFFE/WIMSE workload identity:
-   - SPIFFE ID parsing (`spiffe://trust-domain/path`)
-   - Scoped authorization policies (agent patterns, trust domains, required scopes, path/method matching)
-   - Delegated access detection (agent acting on behalf of a user)
-   - Audit event generation
-   - Three modes: log (observe), warn (log + header), enforce (reject unverified)
-
-5. **x402 Payments + Billing Bridge** — HTTP-native micropayments per the x402.org spec, with a billing webhook bridge to the origin's billing system:
+4. **x402 Payments + Billing Bridge** — HTTP-native micropayments per the x402.org spec, with a billing webhook bridge to the origin's billing system:
    - Server declares pricing via PaymentRequirements
    - 402 response with PAYMENT-REQUIRED header
    - Client pays and retries with PAYMENT-SIGNATURE
@@ -49,13 +42,7 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
    - The API owner never touches crypto. The agent never touches Stripe. Gateway is the adapter.
    - **Future:** fiat x402 where agent owners pre-fund via credit card and x402 deducts from a balance instead of on-chain payment
 
-6. **OAuth2 with PKCE** *(deprecated — use Agent Onboarding)* — full authorization code flow:
-   - PKCE code verifier/challenge generation
-   - `/.well-known/oauth-authorization-server` discovery endpoint
-   - Token exchange, refresh, and validation with scope checking
-   - Zero external dependencies (Web Crypto API)
-
-7. **MCP Server** — auto-generate Model Context Protocol tool definitions from API routes:
+6. **MCP Server** — auto-generate Model Context Protocol tool definitions from API routes:
    - Route metadata → MCP tool definitions (name, description, JSON Schema input)
    - JSON-RPC 2.0 server handling initialize, tools/list, tools/call
    - Enables AI agents to discover and call API endpoints via MCP
@@ -66,9 +53,7 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
    - Tool call streaming (TOOL_CALL_START/ARGS/END/RESULT)
    - State management (STATE_SNAPSHOT, STATE_DELTA)
 
-9. **API Key Auth** *(deprecated — use Agent Onboarding)* — simple key-based authentication as an alternative to OAuth2/JWT
-
-10. **Analytics** — agent traffic telemetry with batch flushing:
+7. **Analytics** — agent traffic telemetry with batch flushing:
     - Per-request: agent name, method, path, status, duration, content type, response size
     - Batch flush to endpoint or local callback
     - Agent detection integrated
@@ -88,13 +73,6 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
     - Optional identity token verification
     - Provider allow-listing
     - Gateway is stateless — never stores credentials
-    - Deprecates identity, api_keys, and oauth2 plugins (removed in v0.3)
-
-15. **API Key Auth** *(deprecated — use Agent Onboarding)* — scoped API keys as a simpler alternative to OAuth2/JWT:
-    - ScopedApiKey: keyId, companyId, userId, scopes, expiresAt, metadata
-    - Pluggable store interface (in-memory for dev, SQLite for production)
-    - Key generation, validation, scope checking, expiration
-
 15. **x402 Client Helpers** — client-side payment handling (for agents consuming paid APIs through the gateway):
     - Detect 402 responses, extract PaymentRequired from header
     - Auto-retry with payment via WalletSigner interface
@@ -140,17 +118,14 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
     - Shows what the gateway adds to the score
 
 ### Key Architecture Decisions from agent-layer:
-- **Plugin ordering matters** — security → discovery → identity → rate limits → payments → analytics → proxy (proven in both TS and Python)
+- **Plugin ordering matters** — security → discovery → onboarding → rate limits → payments → analytics → proxy (proven in both TS and Python)
 - **Agent detection is foundational** — every other plugin depends on knowing if it's an agent and which one
 - **Unified discovery config is essential** — maintaining 5 separate discovery configs is a nightmare; one source of truth
-- **Three identity modes (log/warn/enforce)** let users adopt gradually
 - **x402 alone was insufficient** — the raw x402 protocol handles crypto payments but doesn't bridge to the origin's billing system. The billing webhook bridge solves this: the gateway calls the origin's billing endpoint with payment details so the origin can update quotas/tiers in their own system (Stripe, DB, etc.). Without this bridge, the API owner would need to handle crypto directly.
 - **x402 is route-scoped** — different prices for different endpoints
 - **agents.txt > robots.txt for agents** — robots.txt is for crawlers, agents.txt is for agents (different rules, different semantics)
 - **Content negotiation is critical** — agents need JSON, humans need HTML; the gateway must detect and adapt
 - **MCP auto-generation from discovery config** — define capabilities once, get MCP tools for free
-- **API keys as gateway-level auth** — simpler than OAuth2 for most use cases, gateway manages keys centrally
-
 ## Why Go
 
 - **Purpose-built for proxies** — Caddy, Traefik, Kong are all Go. net/http is best-in-class.
@@ -214,10 +189,10 @@ The dashboard is the primary way most users interact with the gateway. Inspired 
 **Pages:**
 1. **Overview** — proxy status, uptime, request count, latency, origin health (like Cloudflare home)
 2. **Analytics** — agent traffic charts: requests over time, top agents, top paths, error rates, response times
-3. **Plugins** — toggle plugins on/off, configure each one (discovery, identity, rate limits, payments, security)
+3. **Plugins** — toggle plugins on/off, configure each one (discovery, onboarding, rate limits, payments, security)
 4. **Discovery** — edit API name/description/capabilities, preview generated endpoints
 5. **Rate Limits** — visual rule builder: default limits, per-agent overrides, see current usage
-6. **Identity** — configure verification mode, manage trusted issuers, see agent activity
+6. **Onboarding** — configure agent self-registration, manage providers
 7. **Payments** — configure paid routes, prices, see payment history
 8. **Settings** — origin URL, listen port, TLS, admin settings, export/import YAML config
 9. **Logs** — real-time request log viewer with filtering (by agent, path, status, etc.)
@@ -263,12 +238,6 @@ plugins:
         paths: ["/api/widgets", "/api/widgets/*"]
     # Serves: /.well-known/ai, /.well-known/agent.json, /agents.txt, /llms.txt
 
-  identity:
-    enabled: true
-    mode: enforce  # log | warn | enforce
-    # trusted_issuers:
-    #   - https://auth.anthropic.com
-
   payments:
     enabled: false
     # facilitator: https://x402.org/facilitator
@@ -298,15 +267,6 @@ plugins:
     # frame_options: DENY
     # content_type_options: nosniff
     # referrer_policy: strict-origin-when-cross-origin
-
-  oauth2:
-    enabled: false
-    # client_id: your-client-id
-    # authorization_endpoint: https://auth.example.com/authorize
-    # token_endpoint: https://auth.example.com/token
-    # scopes:
-    #   read: "Read access"
-    #   write: "Write access"
 
   mcp:
     enabled: false
@@ -342,15 +302,6 @@ plugins:
     # rate_limit:
     #   max_registrations: 10
     #   window: 1h
-
-  api_keys:  # deprecated — use agent_onboarding
-    enabled: false
-    # store: sqlite  # sqlite (persistent) or memory (dev only)
-    # keys:
-    #   - id: key_prod_abc123
-    #     scopes: [read, write]
-    #     expires_at: 2027-01-01T00:00:00Z
-    #     metadata: { company: "Acme Corp" }
 
   agents_txt:
     enabled: true
@@ -416,16 +367,15 @@ lightlayer-gateway score https://api.example.com --verbose
   Admin:      http://localhost:9090
 
   Plugins:
-    ✓ discovery   serving /.well-known/ai, /agents.txt, /llms.txt
-    ✓ identity    enforcing agent verification
-    ✓ rate_limits 100 req/min default
-    ✓ analytics   logging to ./agent-traffic.log
-    ✓ security    CORS + security headers + robots.txt
-    ✓ oauth2      PKCE flow + discovery endpoint
-    ✓ mcp         MCP tool server (auto-generated from routes)
-    ✓ a2a         A2A protocol server (task lifecycle, streaming)
-    ✓ ag_ui       AG-UI SSE streaming for agent frontends
-    ✓ agents_txt  per-agent access control
+    ✓ discovery        serving /.well-known/ai, /agents.txt, /llms.txt
+    ✓ agent_onboarding agent self-registration via webhook
+    ✓ rate_limits      100 req/min default
+    ✓ analytics        logging to ./agent-traffic.log
+    ✓ security         CORS + security headers + robots.txt
+    ✓ mcp              MCP tool server (auto-generated from routes)
+    ✓ a2a              A2A protocol server (task lifecycle, streaming)
+    ✓ ag_ui            AG-UI SSE streaming for agent frontends
+    ✓ agents_txt       per-agent access control
 
   Ready to proxy agent traffic.
 ```
@@ -466,7 +416,7 @@ Plugins wrap as standard Go middleware, composable via `alice` or manual chainin
 ```go
 handler := security.Middleware()(
     discovery.Middleware()(
-        identity.Middleware()(
+        onboarding.Middleware()(
             rateLimit.Middleware()(
                 payments.Middleware()(
                     analytics.Middleware()(
@@ -484,17 +434,14 @@ handler := security.Middleware()(
 1. **Security** — CORS, security headers, HSTS, CSP
 2. **Discovery** — intercept /.well-known/ai, /.well-known/agent.json, /llms.txt, /agents.txt
 3. **Agent Onboarding** — handle POST /agent/register, return 401 with registration info for unauthenticated requests
-4. **OAuth2** *(deprecated)* — intercept /.well-known/oauth-authorization-server, /authorize, /token
-5. **MCP** — intercept /mcp endpoint (JSON-RPC 2.0 tools)
-5b. **A2A** — intercept /a2a endpoint (JSON-RPC 2.0 task lifecycle)
-5c. **AG-UI** — intercept /ag-ui endpoint (SSE streaming)
-6. **Agents.txt** — enforce per-agent path access rules
-7. **API Keys** *(deprecated)* — validate scoped API keys
-8. **Identity** *(deprecated)* — verify agent credentials (JWT/SPIFFE/WIMSE)
-9. **Rate Limits** — per-agent rate limiting (sliding window)
-10. **Payments** — x402 payment negotiation
-11. **Analytics** — log request (non-blocking, async flush)
-12. **→ Reverse Proxy → Origin** (with structured error wrapping + content negotiation on failures)
+4. **MCP** — intercept /mcp endpoint (JSON-RPC 2.0 tools)
+5. **A2A** — intercept /a2a endpoint (JSON-RPC 2.0 task lifecycle)
+6. **AG-UI** — intercept /ag-ui endpoint (SSE streaming)
+7. **Agents.txt** — enforce per-agent path access rules
+8. **Rate Limits** — per-agent rate limiting (sliding window)
+9. **Payments** — x402 payment negotiation
+10. **Analytics** — log request (non-blocking, async flush)
+11. **→ Reverse Proxy → Origin** (with structured error wrapping + content negotiation on failures)
 
 ## File Structure
 
@@ -526,8 +473,6 @@ gateway/
 │   │   ├── pipeline.go          # Plugin pipeline builder
 │   │   ├── discovery/
 │   │   │   └── discovery.go     # Discovery endpoint serving
-│   │   ├── identity/
-│   │   │   └── identity.go      # Agent identity verification
 │   │   ├── ratelimit/
 │   │   │   └── ratelimit.go     # Per-agent rate limiting
 │   │   ├── payments/
@@ -536,8 +481,6 @@ gateway/
 │   │   │   └── analytics.go     # Traffic analytics
 │   │   ├── security/
 │   │   │   └── security.go      # CORS, security headers, HSTS, CSP
-│   │   ├── oauth2/
-│   │   │   └── oauth2.go        # OAuth2 PKCE flow + discovery
 │   │   ├── mcp/
 │   │   │   └── mcp.go           # MCP JSON-RPC server (auto-generated tools)
 │   │   ├── agentstxt/
@@ -547,8 +490,6 @@ gateway/
 │   │   │   ├── webhook.go       # Webhook HTTP client, HMAC signing
 │   │   │   ├── types.go         # Request/response types
 │   │   │   └── onboarding_test.go
-│   │   ├── apikeys/
-│   │   │   └── apikeys.go       # Scoped API key auth + management (deprecated)
 │   │   ├── a2a/
 │   │   │   ├── a2a.go           # A2A JSON-RPC server (full protocol v1.0)
 │   │   │   ├── tasks.go         # Task lifecycle management
@@ -582,7 +523,7 @@ gateway/
 │   │   │   ├── Plugins.tsx      # Toggle/configure plugins
 │   │   │   ├── Discovery.tsx    # Edit API description, preview endpoints
 │   │   │   ├── RateLimits.tsx   # Rule builder, usage display
-│   │   │   ├── Identity.tsx     # Verification config, agent activity
+│   │   │   ├── Onboarding.tsx   # Agent self-registration config
 │   │   │   ├── Payments.tsx     # Paid routes, payment history
 │   │   │   ├── Settings.tsx     # Origin, port, TLS, YAML export/import
 │   │   │   └── Logs.tsx         # Real-time request log viewer
@@ -649,20 +590,18 @@ No external databases, no Redis, no message queues. One container, one volume. S
 - CLI commands (cobra): init, start, validate
 - Proxy edge cases: error handling, timeouts, streaming, graceful shutdown
 
-### Phase 2: Discovery & Identity Plugins (Cycles 6-10)
+### Phase 2: Discovery & Onboarding Plugins (Cycles 6-10)
 - Plugin interface + pipeline builder
 - Discovery plugin (unified: /.well-known/ai, /.well-known/agent.json, /llms.txt — from agent-layer unified-discovery)
 - Agent detection (18+ known agents — port from agent-layer analytics.ts patterns)
-- Identity plugin (JWT/SPIFFE/WIMSE verification, 3 modes, authz policies — from agent-layer agent-identity.ts)
+- Agent onboarding plugin (self-registration via webhook, credential provisioning)
 - Rate limiting plugin (sliding window, per-agent — from agent-layer rate-limit.ts)
 - Security plugin (CORS, HSTS, CSP, all security headers — from agent-layer security-headers.ts)
 - Structured error envelopes on all gateway errors (from agent-layer errors.ts)
 
-### Phase 3: Payments, Auth, MCP & Protocols (Cycles 11-15)
+### Phase 3: Payments, MCP & Protocols (Cycles 11-15)
 - x402 payment plugin (route-scoped pricing, facilitator verify/settle — from agent-layer x402.ts)
 - agents.txt plugin (per-agent access rules, rate limits, preferred interface — from agent-layer agents-txt.ts)
-- OAuth2 plugin (PKCE flow, discovery endpoint — from agent-layer oauth2.ts)
-- API keys plugin (scoped keys, CRUD management — from agent-layer api-keys.ts)
 - MCP plugin (auto-generate tools from discovery config, JSON-RPC server — from agent-layer mcp.ts)
 - **Full A2A protocol server** (JSON-RPC 2.0: message/send, message/stream, tasks/get, tasks/list, tasks/cancel — translates origin REST → A2A task lifecycle)
 - AG-UI plugin (SSE streaming for CopilotKit/ADK — from agent-layer ag-ui.ts)
@@ -705,18 +644,14 @@ All 20 features from the design doc are implemented and tested:
 1. **Structured error envelopes** — `internal/plugins/errors.go` (AgentErrorEnvelope)
 2. **Agent detection** — `internal/detection/agent.go` (18+ known agents)
 3. **Unified discovery** — `internal/plugins/discovery/` (/.well-known/ai, /.well-known/agent.json, /llms.txt, /agents.txt)
-4. **Agent identity (IETF draft)** — `internal/plugins/identity/` (JWT/SPIFFE/WIMSE, 3 modes: log/warn/enforce)
-5. **x402 payments** — `internal/plugins/payments/` (route-scoped pricing, facilitator verify)
-6. **OAuth2 with PKCE** — `internal/plugins/oauth2/` (authorization flow + discovery endpoint)
-7. **MCP server** — `internal/plugins/mcp/` (auto-generated tools from discovery config, JSON-RPC 2.0)
-8. **AG-UI protocol** — `internal/plugins/agui/` (SSE streaming for CopilotKit/ADK)
-9. **API key auth** — `internal/plugins/apikeys/` (scoped keys, CRUD management)
-10. **Analytics** — `internal/plugins/analytics/` (JSONL logging, async flush, SQLite storage)
+4. **x402 payments** — `internal/plugins/payments/` (route-scoped pricing, facilitator verify)
+5. **MCP server** — `internal/plugins/mcp/` (auto-generated tools from discovery config, JSON-RPC 2.0)
+6. **AG-UI protocol** — `internal/plugins/agui/` (SSE streaming for CopilotKit/ADK)
+7. **Analytics** — `internal/plugins/analytics/` (JSONL logging, async flush, SQLite storage)
 11. **Security headers** — `internal/plugins/security/` (CORS, HSTS, CSP, robots.txt)
 12. **robots.txt** — served by security plugin
 13. **agents.txt** — `internal/plugins/agentstxt/` (per-agent access control)
-14. **API key auth** — merged with #9 above
-15. **x402 client helpers** — payment handling in payments plugin
+14. **x402 client helpers** — payment handling in payments plugin
 16. **Content negotiation** — `internal/plugins/contentneg.go` (JSON for agents, HTML for browsers)
 17. **Full A2A protocol** — `internal/plugins/a2a/` (JSON-RPC 2.0, task lifecycle, SSE streaming)
 18. **AG-UI protocol** — merged with #8 above

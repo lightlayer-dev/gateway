@@ -36,16 +36,6 @@ func Validate(cfg *Config) error {
 		}
 	}
 
-	// Identity mode must be one of the allowed values.
-	if cfg.Plugins.Identity.Enabled {
-		switch cfg.Plugins.Identity.Mode {
-		case "log", "warn", "enforce":
-			// valid
-		default:
-			errs = append(errs, fmt.Errorf("plugins.identity.mode %q is invalid (must be log, warn, or enforce)", cfg.Plugins.Identity.Mode))
-		}
-	}
-
 	// Payment routes must have required fields when payments are enabled.
 	if cfg.Plugins.Payments.Enabled {
 		for i, r := range cfg.Plugins.Payments.Routes {
