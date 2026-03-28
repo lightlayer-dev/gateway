@@ -148,7 +148,7 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled, Config: identityConfigMap(cfg)},
 		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
 		{Name: "payments", Enabled: cfg.Plugins.Payments.Enabled, Config: paymentsConfigMap(cfg)},
-		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled},
+		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled, Config: analyticsConfigMap(cfg)},
 	}
 }
 
@@ -300,6 +300,37 @@ func paymentsConfigMap(cfg *config.Config) map[string]interface{} {
 			routes[i] = route
 		}
 		m["routes"] = routes
+	}
+	return m
+}
+
+// analyticsConfigMap converts AnalyticsConfig into a generic map for the plugin.
+func analyticsConfigMap(cfg *config.Config) map[string]interface{} {
+	ac := cfg.Plugins.Analytics
+	m := map[string]interface{}{}
+	if ac.LogFile != "" {
+		m["log_file"] = ac.LogFile
+	}
+	if ac.Endpoint != "" {
+		m["endpoint"] = ac.Endpoint
+	}
+	if ac.APIKey != "" {
+		m["api_key"] = ac.APIKey
+	}
+	if ac.DBPath != "" {
+		m["db_path"] = ac.DBPath
+	}
+	if ac.BufferSize != 0 {
+		m["buffer_size"] = ac.BufferSize
+	}
+	if ac.FlushInterval != "" {
+		m["flush_interval"] = ac.FlushInterval
+	}
+	if ac.Retention != "" {
+		m["retention"] = ac.Retention
+	}
+	if ac.TrackAll {
+		m["track_all"] = true
 	}
 	return m
 }
