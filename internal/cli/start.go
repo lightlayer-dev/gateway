@@ -118,6 +118,7 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 	// Start admin server.
 	if cfg.Admin.Enabled {
 		gw.adminSrv = admin.NewServer(cfg, pipeline, gw.store, Version)
+		gw.adminSrv.SetUIAssets(UIAssets)
 		gw.adminSrv.ConfigPath = cfgPath
 		gw.adminSrv.ReloadFunc = gw.reload
 		if err := gw.adminSrv.Start(); err != nil {
