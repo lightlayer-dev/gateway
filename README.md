@@ -1,7 +1,7 @@
 # LightLayer Gateway
 
 [![CI](https://github.com/lightlayer-dev/gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/lightlayer-dev/gateway/actions/workflows/ci.yml)
-![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-BSL_1.1-blue)
 
 **A reverse proxy that makes any API agent-ready.** Zero code changes — put it in front of your API and AI agents can discover, authenticate, pay for, and interact with your service automatically.
