@@ -10,34 +10,67 @@ Think **Cloudflare, but for AI agent traffic.**
 
 ---
 
-## Quick Start
+## Install
 
-### Docker Compose (recommended)
+### Download Binary (recommended)
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/lightlayer-dev/gateway/releases/latest):
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/lightlayer-dev/gateway.git
-cd gateway
+# Linux (amd64)
+curl -fsSL https://github.com/lightlayer-dev/gateway/releases/latest/download/lightlayer-gateway-linux-amd64.tar.gz | tar xz
 
-# 2. Create your config (or use the default)
-cp configs/gateway.yaml gateway.yaml
+# Linux (arm64)
+curl -fsSL https://github.com/lightlayer-dev/gateway/releases/latest/download/lightlayer-gateway-linux-arm64.tar.gz | tar xz
+
+# macOS (Apple Silicon)
+curl -fsSL https://github.com/lightlayer-dev/gateway/releases/latest/download/lightlayer-gateway-darwin-arm64.tar.gz | tar xz
+
+# macOS (Intel)
+curl -fsSL https://github.com/lightlayer-dev/gateway/releases/latest/download/lightlayer-gateway-darwin-amd64.tar.gz | tar xz
+```
+
+### Quick Start
+
+```bash
+lightlayer-gateway init      # Generate gateway.yaml
 # Edit gateway.yaml — set your origin URL
-
-# 3. Start
-docker compose up -d
+lightlayer-gateway start     # Start the proxy
 ```
 
 The gateway is now running:
 - **Proxy** → http://localhost:8080 (point agent traffic here)
 - **Dashboard** → http://localhost:9090 (web UI for configuration)
 
-### Binary Install
+### Docker
 
 ```bash
-go install github.com/lightlayer-dev/gateway/cmd/gateway@latest
+docker run -d \
+  -p 8080:8080 -p 9090:9090 \
+  -v $(pwd)/gateway.yaml:/etc/lightlayer/gateway.yaml \
+  -v gateway-data:/var/lib/lightlayer \
+  ghcr.io/lightlayer-dev/gateway:latest
+```
 
-lightlayer-gateway init      # Generate gateway.yaml
-lightlayer-gateway start     # Start the proxy
+Or with Docker Compose:
+
+```yaml
+# docker-compose.yml
+services:
+  gateway:
+    image: ghcr.io/lightlayer-dev/gateway:latest
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - ./gateway.yaml:/etc/lightlayer/gateway.yaml
+      - gateway-data:/var/lib/lightlayer
+    environment:
+      - LIGHTLAYER_CONFIG=/etc/lightlayer/gateway.yaml
+    restart: unless-stopped
+
+volumes:
+  gateway-data:
 ```
 
 ### Build from Source
@@ -336,38 +369,7 @@ Use `--json` for CI integration or `--verbose` for detailed suggestions.
 
 ---
 
-## Self-Hosted Deployment
-
-### Docker Compose (recommended)
-
-```yaml
-# docker-compose.yml
-services:
-  gateway:
-    image: ghcr.io/lightlayer-dev/gateway:latest
-    ports:
-      - "8080:8080"   # Proxy
-      - "9090:9090"   # Dashboard
-    volumes:
-      - ./gateway.yaml:/etc/lightlayer/gateway.yaml
-      - gateway-data:/var/lib/lightlayer
-    environment:
-      - LIGHTLAYER_CONFIG=/etc/lightlayer/gateway.yaml
-    restart: unless-stopped
-
-volumes:
-  gateway-data:
-```
-
-### Docker Run
-
-```bash
-docker run -d \
-  -p 8080:8080 -p 9090:9090 \
-  -v $(pwd)/gateway.yaml:/etc/lightlayer/gateway.yaml \
-  -v gateway-data:/var/lib/lightlayer \
-  ghcr.io/lightlayer-dev/gateway:latest
-```
+## Deployment
 
 ### Systemd
 
