@@ -140,7 +140,7 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled},
 		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled, Config: identityConfigMap(cfg)},
 		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
-		{Name: "payments", Enabled: cfg.Plugins.Payments.Enabled},
+		{Name: "payments", Enabled: cfg.Plugins.Payments.Enabled, Config: paymentsConfigMap(cfg)},
 		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled},
 	}
 }
@@ -249,6 +249,47 @@ func identityConfigMap(cfg *config.Config) map[string]interface{} {
 			policies[i] = pol
 		}
 		m["policies"] = policies
+	}
+	return m
+}
+
+// paymentsConfigMap converts PaymentsConfig into a generic map for the plugin.
+func paymentsConfigMap(cfg *config.Config) map[string]interface{} {
+	pc := cfg.Plugins.Payments
+	m := map[string]interface{}{
+		"facilitator": pc.Facilitator,
+		"pay_to":      pc.PayTo,
+		"network":     pc.Network,
+		"scheme":      pc.Scheme,
+	}
+	if len(pc.Routes) > 0 {
+		routes := make([]map[string]interface{}, len(pc.Routes))
+		for i, r := range pc.Routes {
+			route := map[string]interface{}{
+				"path":  r.Path,
+				"price": r.Price,
+			}
+			if r.Currency != "" {
+				route["currency"] = r.Currency
+			}
+			if r.Network != "" {
+				route["network"] = r.Network
+			}
+			if r.PayTo != "" {
+				route["pay_to"] = r.PayTo
+			}
+			if r.Scheme != "" {
+				route["scheme"] = r.Scheme
+			}
+			if r.MaxTimeoutSeconds != 0 {
+				route["max_timeout_seconds"] = r.MaxTimeoutSeconds
+			}
+			if r.Description != "" {
+				route["description"] = r.Description
+			}
+			routes[i] = route
+		}
+		m["routes"] = routes
 	}
 	return m
 }
