@@ -77,13 +77,7 @@ type OriginConfig struct {
 type PluginsConfig struct {
 	Discovery       DiscoveryConfig       `yaml:"discovery"`
 	Payments        PaymentsConfig        `yaml:"payments"`
-	RateLimits      RateLimitsConfig      `yaml:"rate_limits"`
 	Analytics       AnalyticsConfig       `yaml:"analytics"`
-	Security        SecurityConfig        `yaml:"security"`
-	AgentsTxt       AgentsTxtConfig       `yaml:"agents_txt"`
-	MCP             MCPConfig             `yaml:"mcp"`
-	A2A             A2AConfig             `yaml:"a2a"`
-	AgUI            AgUIConfig            `yaml:"ag_ui"`
 	AgentOnboarding AgentOnboardingConfig `yaml:"agent_onboarding"`
 }
 
@@ -126,19 +120,6 @@ type PaymentRoute struct {
 	Description        string `yaml:"description,omitempty"`
 }
 
-// RateLimitsConfig controls per-agent rate limiting.
-type RateLimitsConfig struct {
-	Enabled  bool                 `yaml:"enabled"`
-	Default  RateLimit            `yaml:"default"`
-	PerAgent map[string]RateLimit `yaml:"per_agent,omitempty"`
-}
-
-// RateLimit defines a request count within a time window.
-type RateLimit struct {
-	Requests int      `yaml:"requests"`
-	Window   Duration `yaml:"window"`
-}
-
 // AnalyticsConfig controls traffic logging and reporting.
 type AnalyticsConfig struct {
 	Enabled       bool   `yaml:"enabled"`
@@ -152,119 +133,11 @@ type AnalyticsConfig struct {
 	TrackAll      bool   `yaml:"track_all,omitempty"`      // track non-agent requests too
 }
 
-// SecurityConfig controls CORS, security headers, and robots.txt.
-type SecurityConfig struct {
-	Enabled     bool     `yaml:"enabled"`
-	CORSOrigins []string `yaml:"cors_origins,omitempty"`
-	CORSMethods []string `yaml:"cors_methods,omitempty"`
-	CORSHeaders []string `yaml:"cors_headers,omitempty"`
-	CORSCredentials bool `yaml:"cors_credentials,omitempty"`
-	CORSMaxAge  int      `yaml:"cors_max_age,omitempty"`
-
-	// Security headers
-	HSTSMaxAge            int    `yaml:"hsts_max_age,omitempty"`
-	HSTSIncludeSubdomains *bool  `yaml:"hsts_include_subdomains,omitempty"`
-	FrameOptions          string `yaml:"frame_options,omitempty"`   // DENY, SAMEORIGIN, or "" to disable
-	ContentTypeOptions    string `yaml:"content_type_options,omitempty"` // nosniff or "" to disable
-	ReferrerPolicy        string `yaml:"referrer_policy,omitempty"`
-	CSP                   string `yaml:"csp,omitempty"`
-	PermissionsPolicy     string `yaml:"permissions_policy,omitempty"`
-
-	// robots.txt
-	RobotsTxt *RobotsTxtConfig `yaml:"robots_txt,omitempty"`
-}
-
-// RobotsTxtConfig controls robots.txt generation.
-type RobotsTxtConfig struct {
-	Rules          []RobotsTxtRule `yaml:"rules,omitempty"`
-	Sitemaps       []string        `yaml:"sitemaps,omitempty"`
-	IncludeAIAgents *bool          `yaml:"include_ai_agents,omitempty"`
-	AIAgentPolicy  string          `yaml:"ai_agent_policy,omitempty"` // allow or disallow
-	AIAllow        []string        `yaml:"ai_allow,omitempty"`
-	AIDisallow     []string        `yaml:"ai_disallow,omitempty"`
-}
-
-// RobotsTxtRule defines a single robots.txt rule block.
-type RobotsTxtRule struct {
-	UserAgent  string   `yaml:"user_agent"`
-	Allow      []string `yaml:"allow,omitempty"`
-	Disallow   []string `yaml:"disallow,omitempty"`
-	CrawlDelay int      `yaml:"crawl_delay,omitempty"`
-}
-
 // AdminConfig controls the admin API server.
 type AdminConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	Port      int    `yaml:"port"`
 	AuthToken string `yaml:"auth_token,omitempty"`
-}
-
-// AgentsTxtConfig controls per-agent access rules via agents.txt.
-type AgentsTxtConfig struct {
-	Enabled      bool              `yaml:"enabled"`
-	Rules        []AgentsTxtRule   `yaml:"rules,omitempty"`
-	SiteName     string            `yaml:"site_name,omitempty"`
-	Contact      string            `yaml:"contact,omitempty"`
-	DiscoveryURL string            `yaml:"discovery_url,omitempty"`
-}
-
-// AgentsTxtRule defines access rules for a specific agent pattern.
-type AgentsTxtRule struct {
-	Agent              string             `yaml:"agent"`
-	Allow              []string           `yaml:"allow,omitempty"`
-	Deny               []string           `yaml:"deny,omitempty"`
-	RateLimit          *AgentsTxtRateLimit `yaml:"rate_limit,omitempty"`
-	PreferredInterface string             `yaml:"preferred_interface,omitempty"` // rest, mcp, graphql, a2a
-	Auth               *AgentsTxtAuth     `yaml:"auth,omitempty"`
-	Description        string             `yaml:"description,omitempty"`
-}
-
-// AgentsTxtRateLimit declares a rate limit in agents.txt.
-type AgentsTxtRateLimit struct {
-	Max           int `yaml:"max"`
-	WindowSeconds int `yaml:"window_seconds,omitempty"` // default: 60
-}
-
-// AgentsTxtAuth declares auth requirements in agents.txt.
-type AgentsTxtAuth struct {
-	Type     string `yaml:"type"`               // bearer, api_key, oauth2, none
-	Endpoint string `yaml:"endpoint,omitempty"`
-	DocsURL  string `yaml:"docs_url,omitempty"`
-}
-
-// MCPConfig controls the MCP JSON-RPC server plugin.
-type MCPConfig struct {
-	Enabled      bool             `yaml:"enabled"`
-	Endpoint     string           `yaml:"endpoint,omitempty"` // default: /mcp
-	Name         string           `yaml:"name,omitempty"`
-	Version      string           `yaml:"version,omitempty"`
-	Instructions string           `yaml:"instructions,omitempty"`
-	Tools        []MCPToolConfig  `yaml:"tools,omitempty"` // manual tool definitions
-}
-
-// MCPToolConfig defines a manually configured MCP tool.
-type MCPToolConfig struct {
-	Name        string                 `yaml:"name"`
-	Description string                 `yaml:"description"`
-	InputSchema map[string]interface{} `yaml:"input_schema,omitempty"`
-}
-
-// A2AConfig controls the A2A protocol server plugin.
-type A2AConfig struct {
-	Enabled           bool   `yaml:"enabled"`
-	Endpoint          string `yaml:"endpoint,omitempty"`           // default: /a2a
-	Streaming         bool   `yaml:"streaming,omitempty"`          // enable SSE streaming
-	PushNotifications bool   `yaml:"push_notifications,omitempty"` // enable webhook push
-	PushURL           string `yaml:"push_url,omitempty"`           // default push URL
-	TaskTTL           string `yaml:"task_ttl,omitempty"`           // completed task retention, default: 24h
-	MaxTasks          int    `yaml:"max_tasks,omitempty"`          // max concurrent tasks, default: 10000
-	DBPath            string `yaml:"db_path,omitempty"`            // SQLite path for task persistence
-}
-
-// AgUIConfig controls the AG-UI SSE streaming plugin.
-type AgUIConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Endpoint string `yaml:"endpoint,omitempty"` // default: /ag-ui
 }
 
 // AgentOnboardingConfig controls the agent self-registration plugin.

@@ -95,7 +95,7 @@ func TestScanFullPipeline(t *testing.T) {
 	assert.NotEmpty(t, report.Timestamp)
 	assert.True(t, report.Score > 0, "score should be > 0")
 	assert.True(t, report.DurationMs >= 0)
-	assert.Len(t, report.Checks, 13)
+	assert.Len(t, report.Checks, 12)
 
 	// Verify some specific checks passed.
 	checkMap := make(map[string]CheckResult)
@@ -122,7 +122,6 @@ func TestEstimateWithGateway(t *testing.T) {
 			{ID: "structured-errors", Score: 0, MaxScore: 10},
 			{ID: "cors", Score: 0, MaxScore: 10},
 			{ID: "security-headers", Score: 0, MaxScore: 10},
-			{ID: "ag-ui", Score: 0, MaxScore: 5},
 			{ID: "response-time", Score: 8, MaxScore: 10},
 			{ID: "openapi", Score: 0, MaxScore: 10},
 			{ID: "content-type", Score: 5, MaxScore: 10},

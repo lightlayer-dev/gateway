@@ -52,21 +52,6 @@ func serveRequest(p *Plugin, path string) *httptest.ResponseRecorder {
 
 // ── Endpoint tests ──────────────────────────────────────────────────────
 
-func TestWellKnownAI(t *testing.T) {
-	p := setupPlugin(t, baseConfig())
-	rec := serveRequest(p, "/.well-known/ai")
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-
-	var manifest AIManifest
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
-
-	assert.Equal(t, "Test API", manifest.Name)
-	assert.Equal(t, "A test API", manifest.Description)
-	assert.Equal(t, "https://api.example.com/llms.txt", manifest.LlmsTxtURL)
-}
-
 func TestAgentCard(t *testing.T) {
 	cfg := baseConfig()
 	cfg["provider"] = map[string]interface{}{
@@ -270,20 +255,17 @@ func TestRandomPathPassThrough(t *testing.T) {
 // ── Disabled formats return 404 (pass through) ─────────────────────────
 
 func TestDisabledFormats(t *testing.T) {
-	f := false
 	cfg := baseConfig()
 	cfg["formats"] = map[string]interface{}{
-		"well_known_ai": false,
-		"agent_card":    false,
-		"agents_txt":    false,
-		"llms_txt":      false,
+		"agent_card": false,
+		"agents_txt": false,
+		"llms_txt":   false,
 	}
-	_ = f
 
 	p := setupPlugin(t, cfg)
 
 	// All discovery paths should pass through to backend (418 Teapot)
-	for _, path := range []string{"/.well-known/ai", "/.well-known/agent.json", "/agents.txt", "/llms.txt", "/llms-full.txt"} {
+	for _, path := range []string{"/.well-known/agent.json", "/agents.txt", "/llms.txt", "/llms-full.txt"} {
 		rec := serveRequest(p, path)
 		assert.Equal(t, http.StatusTeapot, rec.Code, "disabled path %s should pass through", path)
 	}
@@ -292,16 +274,14 @@ func TestDisabledFormats(t *testing.T) {
 func TestPartiallyDisabledFormats(t *testing.T) {
 	cfg := baseConfig()
 	cfg["formats"] = map[string]interface{}{
-		"well_known_ai": true,
-		"agent_card":    false,
-		"llms_txt":      true,
-		"agents_txt":    false,
+		"agent_card": false,
+		"llms_txt":   true,
+		"agents_txt": false,
 	}
 
 	p := setupPlugin(t, cfg)
 
 	// Enabled
-	assert.Equal(t, http.StatusOK, serveRequest(p, "/.well-known/ai").Code)
 	assert.Equal(t, http.StatusOK, serveRequest(p, "/llms.txt").Code)
 	assert.Equal(t, http.StatusOK, serveRequest(p, "/llms-full.txt").Code)
 
@@ -316,23 +296,17 @@ func TestReloadRegeneratesEndpoints(t *testing.T) {
 	p := setupPlugin(t, baseConfig())
 
 	// Initial name
-	rec := serveRequest(p, "/.well-known/ai")
-	var manifest AIManifest
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
-	assert.Equal(t, "Test API", manifest.Name)
+	rec := serveRequest(p, "/.well-known/agent.json")
+	var card A2AAgentCard
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &card))
+	assert.Equal(t, "Test API", card.Name)
 
 	// Reload with new name
 	newCfg := baseConfig()
 	newCfg["name"] = "Updated API"
 	require.NoError(t, p.Reload(newCfg))
 
-	rec = serveRequest(p, "/.well-known/ai")
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
-	assert.Equal(t, "Updated API", manifest.Name)
-
-	// Agent card also updated
 	rec = serveRequest(p, "/.well-known/agent.json")
-	var card A2AAgentCard
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &card))
 	assert.Equal(t, "Updated API", card.Name)
 }
@@ -367,39 +341,6 @@ func TestPluginName(t *testing.T) {
 func TestPluginClose(t *testing.T) {
 	p := setupPlugin(t, baseConfig())
 	assert.NoError(t, p.Close())
-}
-
-// ── AI manifest auth mapping ────────────────────────────────────────────
-
-func TestAIManifestBearerMapsToApiKey(t *testing.T) {
-	cfg := baseConfig()
-	cfg["auth"] = map[string]interface{}{
-		"type": "bearer",
-	}
-
-	p := setupPlugin(t, cfg)
-	rec := serveRequest(p, "/.well-known/ai")
-
-	var manifest AIManifest
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
-	require.NotNil(t, manifest.Auth)
-	assert.Equal(t, "api_key", manifest.Auth.Type) // bearer → api_key in AI manifest
-}
-
-// ── llms.txt URL in manifest depends on format ──────────────────────────
-
-func TestLlmsTxtURLOmittedWhenDisabled(t *testing.T) {
-	cfg := baseConfig()
-	cfg["formats"] = map[string]interface{}{
-		"llms_txt": false,
-	}
-
-	p := setupPlugin(t, cfg)
-	rec := serveRequest(p, "/.well-known/ai")
-
-	var manifest AIManifest
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &manifest))
-	assert.Empty(t, manifest.LlmsTxtURL)
 }
 
 // ── Generator unit tests ────────────────────────────────────────────────

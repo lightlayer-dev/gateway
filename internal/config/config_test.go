@@ -32,14 +32,8 @@ func TestLoadConfigTemplateFile(t *testing.T) {
 
 	assert.False(t, cfg.Plugins.Payments.Enabled)
 
-	assert.True(t, cfg.Plugins.RateLimits.Enabled)
-	assert.Equal(t, 100, cfg.Plugins.RateLimits.Default.Requests)
-	assert.Equal(t, time.Minute, cfg.Plugins.RateLimits.Default.Window.Duration)
-
 	assert.True(t, cfg.Plugins.Analytics.Enabled)
 	assert.Equal(t, "./agent-traffic.log", cfg.Plugins.Analytics.LogFile)
-
-	assert.True(t, cfg.Plugins.Security.Enabled)
 
 	// Admin
 	assert.True(t, cfg.Admin.Enabled)
@@ -134,8 +128,6 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 8080, cfg.Gateway.Listen.Port)
 	assert.Equal(t, "0.0.0.0", cfg.Gateway.Listen.Host)
 	assert.Equal(t, 30*time.Second, cfg.Gateway.Origin.Timeout.Duration)
-	assert.Equal(t, 100, cfg.Plugins.RateLimits.Default.Requests)
-	assert.Equal(t, time.Minute, cfg.Plugins.RateLimits.Default.Window.Duration)
 	assert.Equal(t, 9090, cfg.Admin.Port)
 }
 
@@ -264,15 +256,6 @@ func TestValidatePaymentRoutes(t *testing.T) {
 	assert.Contains(t, err.Error(), "currency is required")
 }
 
-func TestValidateRateLimitWindow(t *testing.T) {
-	cfg := validConfig()
-	cfg.Plugins.RateLimits.Enabled = true
-	cfg.Plugins.RateLimits.Default.Window.Duration = 0
-	err := Validate(cfg)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "window must be a positive duration")
-}
-
 func TestValidateMultipleErrors(t *testing.T) {
 	cfg := &Config{}
 	// Port 0 + no origin URL → at least 2 errors.
@@ -320,7 +303,6 @@ gateway:
 	assert.Equal(t, 8080, cfg.Gateway.Listen.Port)
 	assert.Equal(t, "0.0.0.0", cfg.Gateway.Listen.Host)
 	assert.Equal(t, 30*time.Second, cfg.Gateway.Origin.Timeout.Duration)
-	assert.Equal(t, 100, cfg.Plugins.RateLimits.Default.Requests)
 	assert.Equal(t, 9090, cfg.Admin.Port)
 }
 
@@ -340,7 +322,5 @@ func validConfig() *Config {
 	cfg.Gateway.Origin.URL = "https://api.example.com"
 	cfg.Gateway.Listen.Port = 8080
 	cfg.Admin.Port = 9090
-	cfg.Plugins.RateLimits.Default.Requests = 100
-	cfg.Plugins.RateLimits.Default.Window.Duration = time.Minute
 	return cfg
 }

@@ -15,14 +15,6 @@ func ApplyDefaults(cfg *Config) {
 		cfg.Gateway.Origin.Timeout.Duration = 30 * time.Second
 	}
 
-	// Rate limits defaults
-	if cfg.Plugins.RateLimits.Default.Requests == 0 {
-		cfg.Plugins.RateLimits.Default.Requests = 100
-	}
-	if cfg.Plugins.RateLimits.Default.Window.Duration == 0 {
-		cfg.Plugins.RateLimits.Default.Window.Duration = time.Minute
-	}
-
 	// Admin defaults
 	if cfg.Admin.Port == 0 {
 		cfg.Admin.Port = 9090

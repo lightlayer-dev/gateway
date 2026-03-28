@@ -15,16 +15,10 @@ import (
 	"github.com/lightlayer-dev/gateway/internal/admin"
 	"github.com/lightlayer-dev/gateway/internal/config"
 	"github.com/lightlayer-dev/gateway/internal/plugins"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/a2a"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/agentstxt"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/analytics"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/discovery"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/onboarding"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/payments"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/ratelimit"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/security"
 	"github.com/lightlayer-dev/gateway/internal/proxy"
 	"github.com/lightlayer-dev/gateway/internal/store"
 	"github.com/spf13/cobra"
@@ -295,14 +289,8 @@ func (gw *gateway) cleanup() {
 // Plugin execution order follows the design doc.
 func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 	return []plugins.PluginConfig{
-		{Name: "security", Enabled: cfg.Plugins.Security.Enabled},
 		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled, Config: discoveryConfigMap(cfg)},
 		{Name: "agent_onboarding", Enabled: cfg.Plugins.AgentOnboarding.Enabled, Config: agentOnboardingConfigMap(cfg)},
-		{Name: "mcp", Enabled: cfg.Plugins.MCP.Enabled, Config: mcpConfigMap(cfg)},
-		{Name: "a2a", Enabled: cfg.Plugins.A2A.Enabled, Config: a2aConfigMap(cfg)},
-		{Name: "ag_ui", Enabled: cfg.Plugins.AgUI.Enabled, Config: agUIConfigMap(cfg)},
-		{Name: "agents_txt", Enabled: cfg.Plugins.AgentsTxt.Enabled},
-		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
 		{Name: "payments", Enabled: cfg.Plugins.Payments.Enabled, Config: paymentsConfigMap(cfg)},
 		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled, Config: analyticsConfigMap(cfg)},
 	}
@@ -327,16 +315,10 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 	}
 
 	pluginList := []pluginInfo{
-		{"discovery", cfg.Plugins.Discovery.Enabled, "serving /.well-known/ai, /agents.txt, /llms.txt"},
+		{"discovery", cfg.Plugins.Discovery.Enabled, "serving /llms.txt, /agents.txt, /.well-known/agent.json"},
 		{"agent_onboarding", cfg.Plugins.AgentOnboarding.Enabled, "agent self-registration via webhook"},
-		{"rate_limits", cfg.Plugins.RateLimits.Enabled, fmt.Sprintf("%d req/%s default", cfg.Plugins.RateLimits.Default.Requests, cfg.Plugins.RateLimits.Default.Window.Duration)},
-		{"analytics", cfg.Plugins.Analytics.Enabled, analyticsDetail(cfg)},
-		{"security", cfg.Plugins.Security.Enabled, "CORS + security headers"},
 		{"payments", cfg.Plugins.Payments.Enabled, "x402 payment handling"},
-		{"mcp", cfg.Plugins.MCP.Enabled, mcpDetail(cfg)},
-		{"a2a", cfg.Plugins.A2A.Enabled, a2aDetail(cfg)},
-		{"ag_ui", cfg.Plugins.AgUI.Enabled, agUIDetail(cfg)},
-		{"agents_txt", cfg.Plugins.AgentsTxt.Enabled, "per-agent access control"},
+		{"analytics", cfg.Plugins.Analytics.Enabled, analyticsDetail(cfg)},
 	}
 
 	for _, p := range pluginList {
@@ -432,117 +414,6 @@ func analyticsDetail(cfg *config.Config) string {
 		return fmt.Sprintf("reporting to %s", cfg.Plugins.Analytics.Endpoint)
 	}
 	return "enabled"
-}
-
-func mcpDetail(cfg *config.Config) string {
-	endpoint := cfg.Plugins.MCP.Endpoint
-	if endpoint == "" {
-		endpoint = "/mcp"
-	}
-	return fmt.Sprintf("JSON-RPC at %s", endpoint)
-}
-
-// mcpConfigMap converts MCPConfig into a generic map for the plugin.
-func mcpConfigMap(cfg *config.Config) map[string]interface{} {
-	mc := cfg.Plugins.MCP
-	m := map[string]interface{}{}
-	if mc.Endpoint != "" {
-		m["endpoint"] = mc.Endpoint
-	}
-	if mc.Name != "" {
-		m["name"] = mc.Name
-	}
-	if mc.Version != "" {
-		m["version"] = mc.Version
-	}
-	if mc.Instructions != "" {
-		m["instructions"] = mc.Instructions
-	}
-	if len(mc.Tools) > 0 {
-		tools := make([]interface{}, len(mc.Tools))
-		for i, t := range mc.Tools {
-			tools[i] = map[string]interface{}{
-				"name":         t.Name,
-				"description":  t.Description,
-				"input_schema": t.InputSchema,
-			}
-		}
-		m["tools"] = tools
-	}
-	// Pass discovery capabilities for auto-generation.
-	if cfg.Plugins.Discovery.Enabled && len(cfg.Plugins.Discovery.Capabilities) > 0 {
-		caps := make([]interface{}, len(cfg.Plugins.Discovery.Capabilities))
-		for i, c := range cfg.Plugins.Discovery.Capabilities {
-			caps[i] = map[string]interface{}{
-				"name":        c.Name,
-				"description": c.Description,
-				"methods":     c.Methods,
-				"paths":       c.Paths,
-			}
-		}
-		m["capabilities"] = caps
-	}
-	if cfg.Gateway.Origin.URL != "" {
-		m["origin_url"] = cfg.Gateway.Origin.URL
-	}
-	return m
-}
-
-// a2aConfigMap converts A2AConfig into a generic map for the plugin.
-func a2aConfigMap(cfg *config.Config) map[string]interface{} {
-	ac := cfg.Plugins.A2A
-	m := map[string]interface{}{
-		"streaming":          ac.Streaming,
-		"push_notifications": ac.PushNotifications,
-	}
-	if ac.Endpoint != "" {
-		m["endpoint"] = ac.Endpoint
-	}
-	if ac.PushURL != "" {
-		m["push_url"] = ac.PushURL
-	}
-	if ac.TaskTTL != "" {
-		m["task_ttl"] = ac.TaskTTL
-	}
-	if ac.MaxTasks > 0 {
-		m["max_tasks"] = ac.MaxTasks
-	}
-	if ac.DBPath != "" {
-		m["db_path"] = ac.DBPath
-	}
-	if cfg.Gateway.Origin.URL != "" {
-		m["origin_url"] = cfg.Gateway.Origin.URL
-	}
-	return m
-}
-
-// agUIConfigMap converts AgUIConfig into a generic map for the plugin.
-func agUIConfigMap(cfg *config.Config) map[string]interface{} {
-	m := map[string]interface{}{}
-	if cfg.Plugins.AgUI.Endpoint != "" {
-		m["endpoint"] = cfg.Plugins.AgUI.Endpoint
-	}
-	return m
-}
-
-func a2aDetail(cfg *config.Config) string {
-	endpoint := cfg.Plugins.A2A.Endpoint
-	if endpoint == "" {
-		endpoint = "/a2a"
-	}
-	detail := fmt.Sprintf("JSON-RPC at %s", endpoint)
-	if cfg.Plugins.A2A.Streaming {
-		detail += " (streaming)"
-	}
-	return detail
-}
-
-func agUIDetail(cfg *config.Config) string {
-	endpoint := cfg.Plugins.AgUI.Endpoint
-	if endpoint == "" {
-		endpoint = "/ag-ui"
-	}
-	return fmt.Sprintf("SSE streaming at %s", endpoint)
 }
 
 // discoveryConfigMap converts DiscoveryConfig into a generic map for the plugin,
