@@ -12,6 +12,8 @@ import (
 
 	"github.com/lightlayer-dev/gateway/internal/config"
 	"github.com/lightlayer-dev/gateway/internal/plugins"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/a2a"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/apikeys"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/oauth2"
@@ -143,6 +145,8 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled},
 		{Name: "oauth2", Enabled: cfg.Plugins.OAuth2.Enabled, Config: oauth2ConfigMap(cfg)},
 		{Name: "mcp", Enabled: cfg.Plugins.MCP.Enabled, Config: mcpConfigMap(cfg)},
+		{Name: "a2a", Enabled: cfg.Plugins.A2A.Enabled, Config: a2aConfigMap(cfg)},
+		{Name: "ag_ui", Enabled: cfg.Plugins.AgUI.Enabled, Config: agUIConfigMap(cfg)},
 		{Name: "agents_txt", Enabled: cfg.Plugins.AgentsTxt.Enabled},
 		{Name: "api_keys", Enabled: cfg.Plugins.APIKeys.Enabled, Config: apiKeysConfigMap(cfg)},
 		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled, Config: identityConfigMap(cfg)},
@@ -190,6 +194,8 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 		{"payments", cfg.Plugins.Payments.Enabled, "x402 payment handling"},
 		{"oauth2", cfg.Plugins.OAuth2.Enabled, "PKCE flow + discovery endpoint"},
 		{"mcp", cfg.Plugins.MCP.Enabled, mcpDetail(cfg)},
+		{"a2a", cfg.Plugins.A2A.Enabled, a2aDetail(cfg)},
+		{"ag_ui", cfg.Plugins.AgUI.Enabled, agUIDetail(cfg)},
 		{"api_keys", cfg.Plugins.APIKeys.Enabled, "scoped API key auth"},
 	}
 
@@ -435,6 +441,63 @@ func mcpConfigMap(cfg *config.Config) map[string]interface{} {
 		m["origin_url"] = cfg.Gateway.Origin.URL
 	}
 	return m
+}
+
+// a2aConfigMap converts A2AConfig into a generic map for the plugin.
+func a2aConfigMap(cfg *config.Config) map[string]interface{} {
+	ac := cfg.Plugins.A2A
+	m := map[string]interface{}{
+		"streaming":          ac.Streaming,
+		"push_notifications": ac.PushNotifications,
+	}
+	if ac.Endpoint != "" {
+		m["endpoint"] = ac.Endpoint
+	}
+	if ac.PushURL != "" {
+		m["push_url"] = ac.PushURL
+	}
+	if ac.TaskTTL != "" {
+		m["task_ttl"] = ac.TaskTTL
+	}
+	if ac.MaxTasks > 0 {
+		m["max_tasks"] = ac.MaxTasks
+	}
+	if ac.DBPath != "" {
+		m["db_path"] = ac.DBPath
+	}
+	if cfg.Gateway.Origin.URL != "" {
+		m["origin_url"] = cfg.Gateway.Origin.URL
+	}
+	return m
+}
+
+// agUIConfigMap converts AgUIConfig into a generic map for the plugin.
+func agUIConfigMap(cfg *config.Config) map[string]interface{} {
+	m := map[string]interface{}{}
+	if cfg.Plugins.AgUI.Endpoint != "" {
+		m["endpoint"] = cfg.Plugins.AgUI.Endpoint
+	}
+	return m
+}
+
+func a2aDetail(cfg *config.Config) string {
+	endpoint := cfg.Plugins.A2A.Endpoint
+	if endpoint == "" {
+		endpoint = "/a2a"
+	}
+	detail := fmt.Sprintf("JSON-RPC at %s", endpoint)
+	if cfg.Plugins.A2A.Streaming {
+		detail += " (streaming)"
+	}
+	return detail
+}
+
+func agUIDetail(cfg *config.Config) string {
+	endpoint := cfg.Plugins.AgUI.Endpoint
+	if endpoint == "" {
+		endpoint = "/ag-ui"
+	}
+	return fmt.Sprintf("SSE streaming at %s", endpoint)
 }
 
 // apiKeysConfigMap converts APIKeysConfig into a generic map for the plugin.

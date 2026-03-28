@@ -85,6 +85,8 @@ type PluginsConfig struct {
 	OAuth2     OAuth2Config     `yaml:"oauth2"`
 	MCP        MCPConfig        `yaml:"mcp"`
 	APIKeys    APIKeysConfig    `yaml:"api_keys"`
+	A2A        A2AConfig        `yaml:"a2a"`
+	AgUI       AgUIConfig       `yaml:"ag_ui"`
 }
 
 // DiscoveryConfig controls agent discovery endpoint serving.
@@ -308,6 +310,24 @@ type APIKeyConfig struct {
 	Scopes    []string               `yaml:"scopes"`
 	ExpiresAt string                 `yaml:"expires_at,omitempty"` // RFC 3339
 	Metadata  map[string]interface{} `yaml:"metadata,omitempty"`
+}
+
+// A2AConfig controls the A2A protocol server plugin.
+type A2AConfig struct {
+	Enabled           bool   `yaml:"enabled"`
+	Endpoint          string `yaml:"endpoint,omitempty"`           // default: /a2a
+	Streaming         bool   `yaml:"streaming,omitempty"`          // enable SSE streaming
+	PushNotifications bool   `yaml:"push_notifications,omitempty"` // enable webhook push
+	PushURL           string `yaml:"push_url,omitempty"`           // default push URL
+	TaskTTL           string `yaml:"task_ttl,omitempty"`           // completed task retention, default: 24h
+	MaxTasks          int    `yaml:"max_tasks,omitempty"`          // max concurrent tasks, default: 10000
+	DBPath            string `yaml:"db_path,omitempty"`            // SQLite path for task persistence
+}
+
+// AgUIConfig controls the AG-UI SSE streaming plugin.
+type AgUIConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Endpoint string `yaml:"endpoint,omitempty"` // default: /ag-ui
 }
 
 // LoadConfig reads a YAML config file, applies defaults, applies environment
