@@ -167,10 +167,15 @@ type RateLimit struct {
 
 // AnalyticsConfig controls traffic logging and reporting.
 type AnalyticsConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	LogFile  string `yaml:"log_file,omitempty"`
-	Endpoint string `yaml:"endpoint,omitempty"`
-	APIKey   string `yaml:"api_key,omitempty"`
+	Enabled       bool   `yaml:"enabled"`
+	LogFile       string `yaml:"log_file,omitempty"`
+	Endpoint      string `yaml:"endpoint,omitempty"`
+	APIKey        string `yaml:"api_key,omitempty"`
+	DBPath        string `yaml:"db_path,omitempty"`        // SQLite database path
+	BufferSize    int    `yaml:"buffer_size,omitempty"`     // max events before flush (default: 50)
+	FlushInterval string `yaml:"flush_interval,omitempty"` // e.g. "30s" (default: 30s)
+	Retention     string `yaml:"retention,omitempty"`       // e.g. "720h" for 30 days
+	TrackAll      bool   `yaml:"track_all,omitempty"`      // track non-agent requests too
 }
 
 // SecurityConfig controls CORS, security headers, and robots.txt.
