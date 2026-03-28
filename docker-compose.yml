@@ -1,0 +1,16 @@
+services:
+  gateway:
+    build: .
+    image: ghcr.io/lightlayer-dev/gateway:latest
+    ports:
+      - "8080:8080"   # Proxy
+      - "9090:9090"   # Dashboard + Admin API
+    volumes:
+      - ./gateway.yaml:/etc/lightlayer/gateway.yaml
+      - gateway-data:/var/lib/lightlayer
+    environment:
+      - LIGHTLAYER_CONFIG=/etc/lightlayer/gateway.yaml
+    restart: unless-stopped
+
+volumes:
+  gateway-data:
