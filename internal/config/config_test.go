@@ -30,9 +30,6 @@ func TestLoadConfigTemplateFile(t *testing.T) {
 	assert.Len(t, cfg.Plugins.Discovery.Capabilities, 1)
 	assert.Equal(t, "widgets", cfg.Plugins.Discovery.Capabilities[0].Name)
 
-	assert.True(t, cfg.Plugins.Identity.Enabled)
-	assert.Equal(t, "enforce", cfg.Plugins.Identity.Mode)
-
 	assert.False(t, cfg.Plugins.Payments.Enabled)
 
 	assert.True(t, cfg.Plugins.RateLimits.Enabled)
@@ -155,13 +152,6 @@ func TestDefaultsDoNotOverrideExplicit(t *testing.T) {
 	assert.Equal(t, 8888, cfg.Admin.Port)
 }
 
-func TestDefaultIdentityMode(t *testing.T) {
-	cfg := &Config{}
-	cfg.Plugins.Identity.Enabled = true
-	ApplyDefaults(cfg)
-	assert.Equal(t, "log", cfg.Plugins.Identity.Mode)
-}
-
 // ---------------------------------------------------------------------------
 // Environment variable overrides
 // ---------------------------------------------------------------------------
@@ -247,22 +237,6 @@ func TestValidatePortRange(t *testing.T) {
 	err = Validate(cfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "admin.port")
-}
-
-func TestValidateIdentityMode(t *testing.T) {
-	for _, mode := range []string{"log", "warn", "enforce"} {
-		cfg := validConfig()
-		cfg.Plugins.Identity.Enabled = true
-		cfg.Plugins.Identity.Mode = mode
-		assert.NoError(t, Validate(cfg), "mode %q should be valid", mode)
-	}
-
-	cfg := validConfig()
-	cfg.Plugins.Identity.Enabled = true
-	cfg.Plugins.Identity.Mode = "yolo"
-	err := Validate(cfg)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "identity.mode")
 }
 
 func TestValidatePaymentRoutes(t *testing.T) {

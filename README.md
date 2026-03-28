@@ -101,9 +101,6 @@ LightLayer Gateway sits between AI agents and your API. It automatically handles
 | **A2A** | Full Google A2A protocol server — your REST API becomes A2A-compatible |
 | **AG-UI** | SSE streaming for CopilotKit, Google ADK, and other agent UIs |
 | **agents.txt** | Per-agent access control with rate limits and preferred interface |
-| **Identity** *(deprecated)* | Verifies agent JWT/SPIFFE credentials — use Agent Onboarding instead |
-| **OAuth2** *(deprecated)* | PKCE authorization flow — use Agent Onboarding instead |
-| **API Keys** *(deprecated)* | Scoped API key auth — use Agent Onboarding instead |
 
 <!-- Screenshot placeholder: ![Dashboard](docs/dashboard.png) -->
 
@@ -116,15 +113,15 @@ LightLayer Gateway sits between AI agents and your API. It automatically handles
 │   AI Agent   │────▶│   LightLayer Gateway     │────▶│  Origin API  │
 │  (Claude,    │     │                          │     │  (any lang,  │
 │   GPT, etc.) │◀────│  Security → Discovery →  │◀────│   any stack) │
-└─────────────┘     │  Identity → Rate Limits → │     └──────────────┘
-                    │  Payments → Analytics →   │
+└─────────────┘     │  Onboarding → Rate Limits │     └──────────────┘
+                    │  → Payments → Analytics → │
                     │  → Reverse Proxy          │
                     │                          │
                     │  Dashboard UI (port 9090) │
                     └──────────────────────────┘
 ```
 
-The plugin pipeline executes in order: Security → Discovery → Agent Onboarding → OAuth2 → MCP → A2A → AG-UI → agents.txt → API Keys → Identity → Rate Limits → Payments → Analytics → Proxy.
+The plugin pipeline executes in order: Security → Discovery → Agent Onboarding → MCP → A2A → AG-UI → agents.txt → Rate Limits → Payments → Analytics → Proxy.
 
 Single binary. Single container. No external databases — SQLite handles everything.
 
@@ -167,13 +164,6 @@ plugins:
         methods: ["GET", "POST", "PUT", "DELETE"]
         paths: ["/api/widgets", "/api/widgets/*"]
 
-  # Agent identity verification
-  identity:
-    enabled: true
-    mode: log              # log | warn | enforce
-    # trusted_issuers:
-    #   - https://auth.anthropic.com
-
   # x402 micropayments
   payments:
     enabled: false
@@ -204,11 +194,6 @@ plugins:
     enabled: true
     # cors_origins: ["*"]
 
-  # OAuth2 with PKCE
-  oauth2:
-    enabled: false
-    # client_id: your-client-id
-
   # MCP tool server (auto-generated from discovery)
   mcp:
     enabled: false
@@ -224,13 +209,6 @@ plugins:
   ag_ui:
     enabled: false
     # endpoint: /ag-ui
-
-  # Scoped API keys
-  api_keys:
-    enabled: false
-    # keys:
-    #   - id: key_prod_abc123
-    #     scopes: [read, write]
 
   # agents.txt access control
   agents_txt:
@@ -289,17 +267,14 @@ Plugins execute as middleware in a fixed order optimized for correctness:
 1. **Security** — CORS + security headers (runs first to protect all responses)
 2. **Discovery** — Intercepts `/.well-known/ai`, `/agents.txt`, `/llms.txt`
 3. **Agent Onboarding** — Handles `POST /agent/register`, returns 401 with registration info for unauthenticated requests
-4. **OAuth2** *(deprecated)* — Intercepts auth endpoints
-5. **MCP** — Intercepts `/mcp` (JSON-RPC 2.0)
-6. **A2A** — Intercepts `/a2a` (JSON-RPC 2.0 task lifecycle)
-7. **AG-UI** — Intercepts `/ag-ui` (SSE streaming)
-8. **agents.txt** — Enforces per-agent path access rules
-9. **API Keys** *(deprecated)* — Validates scoped API keys
-10. **Identity** *(deprecated)* — Verifies agent JWT/SPIFFE credentials
-11. **Rate Limits** — Enforces per-agent rate limits
-12. **Payments** — x402 payment negotiation
-13. **Analytics** — Logs request (async, non-blocking)
-14. **→ Reverse Proxy → Origin**
+4. **MCP** — Intercepts `/mcp` (JSON-RPC 2.0)
+5. **A2A** — Intercepts `/a2a` (JSON-RPC 2.0 task lifecycle)
+6. **AG-UI** — Intercepts `/ag-ui` (SSE streaming)
+7. **agents.txt** — Enforces per-agent path access rules
+8. **Rate Limits** — Enforces per-agent rate limits
+9. **Payments** — x402 payment negotiation
+10. **Analytics** — Logs request (async, non-blocking)
+11. **→ Reverse Proxy → Origin**
 
 ### Writing Custom Plugins
 
@@ -400,10 +375,6 @@ When an agent hits the API without credentials, the gateway returns a helpful 40
   "supported_credential_types": ["api_key", "oauth2_client_credentials", "bearer"]
 }
 ```
-
-### Deprecation Notice
-
-The **identity**, **api_keys**, and **oauth2** plugins are deprecated in favor of **agent_onboarding**. They will be removed in v0.3. The agent onboarding plugin replaces gateway-level auth with a webhook-based model where credentials come from the API owner's auth system, not the gateway.
 
 ---
 
@@ -559,7 +530,6 @@ server {
 
 - [ ] Set `admin.auth_token` to protect the dashboard
 - [ ] Configure TLS (or terminate at a load balancer)
-- [ ] Set `identity.mode: enforce` for production
 - [ ] Configure `analytics.db_path` for persistent analytics
 - [ ] Set up log rotation for `analytics.log_file`
 - [ ] Mount a persistent volume for SQLite data

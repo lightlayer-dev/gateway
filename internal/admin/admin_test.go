@@ -171,24 +171,12 @@ func TestAnalyticsEndpoint(t *testing.T) {
 // ── Config ───────────────────────────────────────────────────────────────
 
 func TestGetConfig(t *testing.T) {
-	s, ts := testServer(t)
-	// Set a secret that should be sanitized in the response.
-	s.GetConfig().Plugins.OAuth2.ClientSecret = "supersecret"
-
+	_, ts := testServer(t)
 	resp, err := http.Get(ts.URL + "/api/config")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// Decode into the config struct directly since JSON keys match Go field names
-	// (yaml tags are used for YAML, but JSON encoder uses field names).
-	var body config.Config
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-
-	// Check that secrets are sanitized.
-	assert.Equal(t, "***", body.Plugins.OAuth2.ClientSecret)
-	assert.Empty(t, body.Admin.AuthToken)
 }
 
 func TestExportConfig(t *testing.T) {
@@ -221,8 +209,6 @@ func TestImportConfig(t *testing.T) {
 plugins:
   discovery:
     enabled: false
-  identity:
-    enabled: false
   rate_limits:
     enabled: false
   analytics:
@@ -248,37 +234,6 @@ admin:
 	data, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "api.example.com")
-}
-
-// ── API Keys ─────────────────────────────────────────────────────────────
-
-func TestAPIKeyCRUD(t *testing.T) {
-	_, ts := testServer(t)
-
-	// Create.
-	body := `{"id":"key_test_123","scopes":["read","write"]}`
-	resp, err := http.Post(ts.URL+"/api/keys", "application/json", strings.NewReader(body))
-	require.NoError(t, err)
-	resp.Body.Close()
-	assert.Equal(t, http.StatusCreated, resp.StatusCode)
-
-	// List.
-	resp, err = http.Get(ts.URL + "/api/keys")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var listBody map[string]interface{}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listBody))
-	keys := listBody["keys"].([]interface{})
-	assert.Len(t, keys, 1)
-
-	// Delete.
-	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/keys/key_test_123", nil)
-	resp2, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	resp2.Body.Close()
-	assert.Equal(t, http.StatusOK, resp2.StatusCode)
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────

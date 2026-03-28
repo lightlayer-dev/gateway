@@ -191,16 +191,6 @@ Or rejection:
 }
 ```
 
-## What Gets Deprecated
-
-The following plugins are deprecated in favor of agent_onboarding:
-
-- **identity** — was verifying agent JWTs at the gateway level. Now agent identity verification is part of onboarding (optional `require_identity` flag). Gateway-level identity gating had no real use case.
-- **api_keys** — was managing gateway-issued API keys. Agents should get credentials from the origin, not the gateway. The gateway is a proxy, not an auth provider.
-- **oauth2** — was running an OAuth2 server on the gateway. Same problem — the gateway shouldn't be issuing tokens.
-
-These plugins will be marked deprecated with log warnings and removed in v0.3.
-
 ## Payments Bridge — x402 to Origin Billing
 
 The gateway bridges x402 payments with the origin's own billing system. The API owner never touches crypto. The agent never touches Stripe. The gateway is the adapter.

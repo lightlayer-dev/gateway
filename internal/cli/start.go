@@ -19,11 +19,8 @@ import (
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/agentstxt"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/analytics"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/apikeys"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/discovery"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/identity"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/oauth2"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/onboarding"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/payments"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/ratelimit"
@@ -301,13 +298,10 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 		{Name: "security", Enabled: cfg.Plugins.Security.Enabled},
 		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled, Config: discoveryConfigMap(cfg)},
 		{Name: "agent_onboarding", Enabled: cfg.Plugins.AgentOnboarding.Enabled, Config: agentOnboardingConfigMap(cfg)},
-		{Name: "oauth2", Enabled: cfg.Plugins.OAuth2.Enabled, Config: oauth2ConfigMap(cfg)},
 		{Name: "mcp", Enabled: cfg.Plugins.MCP.Enabled, Config: mcpConfigMap(cfg)},
 		{Name: "a2a", Enabled: cfg.Plugins.A2A.Enabled, Config: a2aConfigMap(cfg)},
 		{Name: "ag_ui", Enabled: cfg.Plugins.AgUI.Enabled, Config: agUIConfigMap(cfg)},
 		{Name: "agents_txt", Enabled: cfg.Plugins.AgentsTxt.Enabled},
-		{Name: "api_keys", Enabled: cfg.Plugins.APIKeys.Enabled, Config: apiKeysConfigMap(cfg)},
-		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled, Config: identityConfigMap(cfg)},
 		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
 		{Name: "payments", Enabled: cfg.Plugins.Payments.Enabled, Config: paymentsConfigMap(cfg)},
 		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled, Config: analyticsConfigMap(cfg)},
@@ -334,17 +328,15 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 
 	pluginList := []pluginInfo{
 		{"discovery", cfg.Plugins.Discovery.Enabled, "serving /.well-known/ai, /agents.txt, /llms.txt"},
-		{"identity", cfg.Plugins.Identity.Enabled, fmt.Sprintf("%s mode", cfg.Plugins.Identity.Mode)},
+		{"agent_onboarding", cfg.Plugins.AgentOnboarding.Enabled, "agent self-registration via webhook"},
 		{"rate_limits", cfg.Plugins.RateLimits.Enabled, fmt.Sprintf("%d req/%s default", cfg.Plugins.RateLimits.Default.Requests, cfg.Plugins.RateLimits.Default.Window.Duration)},
 		{"analytics", cfg.Plugins.Analytics.Enabled, analyticsDetail(cfg)},
 		{"security", cfg.Plugins.Security.Enabled, "CORS + security headers"},
 		{"payments", cfg.Plugins.Payments.Enabled, "x402 payment handling"},
-		{"oauth2", cfg.Plugins.OAuth2.Enabled, "PKCE flow + discovery endpoint"},
 		{"mcp", cfg.Plugins.MCP.Enabled, mcpDetail(cfg)},
 		{"a2a", cfg.Plugins.A2A.Enabled, a2aDetail(cfg)},
 		{"ag_ui", cfg.Plugins.AgUI.Enabled, agUIDetail(cfg)},
-		{"api_keys", cfg.Plugins.APIKeys.Enabled, "scoped API key auth"},
-		{"agent_onboarding", cfg.Plugins.AgentOnboarding.Enabled, "agent self-registration via webhook"},
+		{"agents_txt", cfg.Plugins.AgentsTxt.Enabled, "per-agent access control"},
 	}
 
 	for _, p := range pluginList {
@@ -358,63 +350,6 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  Ready to proxy agent traffic.")
 	fmt.Fprintln(w)
-}
-
-// identityConfigMap converts IdentityConfig into a generic map for the plugin.
-func identityConfigMap(cfg *config.Config) map[string]interface{} {
-	ic := cfg.Plugins.Identity
-	m := map[string]interface{}{
-		"mode":            ic.Mode,
-		"trusted_issuers": ic.TrustedIssuers,
-	}
-	if len(ic.Audience) > 0 {
-		m["audience"] = ic.Audience
-	}
-	if len(ic.TrustedDomains) > 0 {
-		m["trusted_domains"] = ic.TrustedDomains
-	}
-	if ic.DefaultPolicy != "" {
-		m["default_policy"] = ic.DefaultPolicy
-	}
-	if ic.HeaderName != "" {
-		m["header_name"] = ic.HeaderName
-	}
-	if ic.TokenPrefix != "" {
-		m["token_prefix"] = ic.TokenPrefix
-	}
-	if ic.ClockSkewSeconds != 0 {
-		m["clock_skew_seconds"] = ic.ClockSkewSeconds
-	}
-	if ic.MaxLifetimeSeconds != 0 {
-		m["max_lifetime_seconds"] = ic.MaxLifetimeSeconds
-	}
-	if len(ic.Policies) > 0 {
-		policies := make([]map[string]interface{}, len(ic.Policies))
-		for i, p := range ic.Policies {
-			pol := map[string]interface{}{"name": p.Name}
-			if p.AgentPattern != "" {
-				pol["agent_pattern"] = p.AgentPattern
-			}
-			if len(p.TrustDomains) > 0 {
-				pol["trust_domains"] = p.TrustDomains
-			}
-			if len(p.RequiredScopes) > 0 {
-				pol["required_scopes"] = p.RequiredScopes
-			}
-			if len(p.Methods) > 0 {
-				pol["methods"] = p.Methods
-			}
-			if len(p.Paths) > 0 {
-				pol["paths"] = p.Paths
-			}
-			if p.AllowDelegated != nil {
-				pol["allow_delegated"] = *p.AllowDelegated
-			}
-			policies[i] = pol
-		}
-		m["policies"] = policies
-	}
-	return m
 }
 
 // paymentsConfigMap converts PaymentsConfig into a generic map for the plugin.
@@ -505,44 +440,6 @@ func mcpDetail(cfg *config.Config) string {
 		endpoint = "/mcp"
 	}
 	return fmt.Sprintf("JSON-RPC at %s", endpoint)
-}
-
-// oauth2ConfigMap converts OAuth2Config into a generic map for the plugin.
-func oauth2ConfigMap(cfg *config.Config) map[string]interface{} {
-	oc := cfg.Plugins.OAuth2
-	m := map[string]interface{}{}
-	if oc.Issuer != "" {
-		m["issuer"] = oc.Issuer
-	}
-	if oc.ClientID != "" {
-		m["client_id"] = oc.ClientID
-	}
-	if oc.ClientSecret != "" {
-		m["client_secret"] = oc.ClientSecret
-	}
-	if oc.RedirectURI != "" {
-		m["redirect_uri"] = oc.RedirectURI
-	}
-	if oc.Audience != "" {
-		m["audience"] = oc.Audience
-	}
-	if len(oc.Scopes) > 0 {
-		scopes := make(map[string]interface{}, len(oc.Scopes))
-		for k, v := range oc.Scopes {
-			scopes[k] = v
-		}
-		m["scopes"] = scopes
-	}
-	if oc.TokenTTL != 0 {
-		m["token_ttl"] = oc.TokenTTL
-	}
-	if oc.RefreshTokenTTL != 0 {
-		m["refresh_token_ttl"] = oc.RefreshTokenTTL
-	}
-	if oc.CodeTTL != 0 {
-		m["code_ttl"] = oc.CodeTTL
-	}
-	return m
 }
 
 // mcpConfigMap converts MCPConfig into a generic map for the plugin.
@@ -646,45 +543,6 @@ func agUIDetail(cfg *config.Config) string {
 		endpoint = "/ag-ui"
 	}
 	return fmt.Sprintf("SSE streaming at %s", endpoint)
-}
-
-// apiKeysConfigMap converts APIKeysConfig into a generic map for the plugin.
-func apiKeysConfigMap(cfg *config.Config) map[string]interface{} {
-	ak := cfg.Plugins.APIKeys
-	m := map[string]interface{}{}
-	if ak.Prefix != "" {
-		m["prefix"] = ak.Prefix
-	}
-	if ak.AdminPath != "" {
-		m["admin_path"] = ak.AdminPath
-	}
-	if ak.Store != "" {
-		m["store"] = ak.Store
-	}
-	if len(ak.Keys) > 0 {
-		keys := make([]interface{}, len(ak.Keys))
-		for i, k := range ak.Keys {
-			km := map[string]interface{}{
-				"id":     k.ID,
-				"scopes": k.Scopes,
-			}
-			if k.CompanyID != "" {
-				km["company_id"] = k.CompanyID
-			}
-			if k.UserID != "" {
-				km["user_id"] = k.UserID
-			}
-			if k.ExpiresAt != "" {
-				km["expires_at"] = k.ExpiresAt
-			}
-			if len(k.Metadata) > 0 {
-				km["metadata"] = k.Metadata
-			}
-			keys[i] = km
-		}
-		m["keys"] = keys
-	}
-	return m
 }
 
 // discoveryConfigMap converts DiscoveryConfig into a generic map for the plugin,

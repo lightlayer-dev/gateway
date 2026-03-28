@@ -17,11 +17,8 @@ import (
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/agentstxt"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/analytics"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/apikeys"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/discovery"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/identity"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/oauth2"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/payments"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/ratelimit"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/security"
@@ -81,7 +78,6 @@ func BenchmarkWithAllPlugins(b *testing.B) {
 		{Name: "security", Enabled: true},
 		{Name: "discovery", Enabled: true},
 		{Name: "agents_txt", Enabled: true},
-		{Name: "identity", Enabled: true, Config: map[string]interface{}{"mode": "log"}},
 		{Name: "rate_limits", Enabled: true},
 		{Name: "analytics", Enabled: true},
 	}
@@ -127,7 +123,6 @@ func BenchmarkConcurrent1000(b *testing.B) {
 	pipelineCfgs := []plugins.PluginConfig{
 		{Name: "security", Enabled: true},
 		{Name: "discovery", Enabled: true},
-		{Name: "identity", Enabled: true, Config: map[string]interface{}{"mode": "log"}},
 		{Name: "rate_limits", Enabled: true},
 		{Name: "analytics", Enabled: true},
 	}
@@ -174,7 +169,6 @@ func BenchmarkProxyLatencyOverhead(b *testing.B) {
 	pipelineCfgs := []plugins.PluginConfig{
 		{Name: "security", Enabled: true},
 		{Name: "discovery", Enabled: true},
-		{Name: "identity", Enabled: true, Config: map[string]interface{}{"mode": "log"}},
 		{Name: "rate_limits", Enabled: true},
 		{Name: "analytics", Enabled: true},
 	}

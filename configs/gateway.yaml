@@ -26,12 +26,6 @@ plugins:
         methods: ["GET", "POST", "PUT", "DELETE"]
         paths: ["/api/widgets", "/api/widgets/*"]
 
-  identity:
-    enabled: true
-    mode: enforce  # log | warn | enforce
-    # trusted_issuers:
-    #   - https://auth.anthropic.com
-
   payments:
     enabled: false
     # facilitator: https://x402.org/facilitator

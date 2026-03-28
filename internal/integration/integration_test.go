@@ -18,11 +18,8 @@ import (
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/agentstxt"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/analytics"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/apikeys"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/discovery"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/identity"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/oauth2"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/payments"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/ratelimit"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/security"
@@ -63,8 +60,6 @@ func buildGateway(t *testing.T, originURL string, cfgFn func(*config.Config)) ht
 	cfg.Plugins.RateLimits.Default.Requests = 1000
 	cfg.Plugins.RateLimits.Default.Window = config.Duration{Duration: time.Minute}
 	cfg.Plugins.Analytics.Enabled = true
-	cfg.Plugins.Identity.Enabled = true
-	cfg.Plugins.Identity.Mode = "log"
 
 	if cfgFn != nil {
 		cfgFn(cfg)
@@ -106,7 +101,6 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 	return []plugins.PluginConfig{
 		{Name: "security", Enabled: cfg.Plugins.Security.Enabled},
 		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled, Config: discoveryCfg},
-		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled, Config: map[string]interface{}{"mode": cfg.Plugins.Identity.Mode}},
 		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
 		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled},
 	}
@@ -328,9 +322,7 @@ func TestAgentDetectionPipeline(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	handler := buildGateway(t, origin.URL, func(cfg *config.Config) {
-		cfg.Plugins.Identity.Mode = "log"
-	})
+	handler := buildGateway(t, origin.URL, nil)
 	gw := httptest.NewServer(handler)
 	defer gw.Close()
 
