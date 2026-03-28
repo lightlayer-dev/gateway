@@ -67,9 +67,10 @@ type TLSConfig struct {
 
 // OriginConfig defines the upstream origin to proxy to.
 type OriginConfig struct {
-	URL     string   `yaml:"url"`
-	Timeout Duration `yaml:"timeout"`
-	Retries int      `yaml:"retries,omitempty"`
+	URL           string   `yaml:"url"`
+	Timeout       Duration `yaml:"timeout"`
+	Retries       int      `yaml:"retries,omitempty"`
+	TLSSkipVerify bool     `yaml:"tls_skip_verify,omitempty"`
 }
 
 // PluginsConfig groups all plugin configurations.
