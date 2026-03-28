@@ -463,6 +463,13 @@ lightlayer-gateway dev --config gateway.yaml
 
 ---
 
+## See Also
+
+- **[agent-layer-ts](https://github.com/lightlayer-dev/agent-layer-ts)** — Code-level middleware for Express, Koa, Hono, and Fastify (MIT)
+- **[agent-layer-python](https://github.com/lightlayer-dev/agent-layer-python)** — Code-level middleware for FastAPI, Flask, and Django (MIT)
+- **[agent-bench](https://github.com/lightlayer-dev/agent-bench)** — Benchmark CLI for agent-readiness scoring
+- **[company.lightlayer.dev](https://company.lightlayer.dev)** — Blog and research on the agent-native web
+
 ## License
 
 LightLayer Gateway is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
