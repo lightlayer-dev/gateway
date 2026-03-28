@@ -73,6 +73,28 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
 
 13. **agents.txt** — per-agent access control with rate limits, preferred interface (REST/MCP/GraphQL/A2A), and auth requirements
 
+14. **API Key Auth** — scoped API keys as a simpler alternative to OAuth2/JWT:
+    - ScopedApiKey: keyId, companyId, userId, scopes, expiresAt, metadata
+    - Pluggable store interface (in-memory for dev, SQLite for production)
+    - Key generation, validation, scope checking, expiration
+
+15. **x402 Client Helpers** — client-side payment handling (for agents consuming paid APIs through the gateway):
+    - Detect 402 responses, extract PaymentRequired from header
+    - Auto-retry with payment via WalletSigner interface
+    - Wrap fetch to transparently handle paid APIs
+
+16. **Content Negotiation** — smart error responses based on client type:
+    - Detect if client prefers JSON (agents, curl, bots) vs HTML (browsers)
+    - Agents get structured JSON error envelopes
+    - Browsers get rendered HTML error pages
+    - Based on Accept header + User-Agent pattern matching
+
+17. **Agent-Readiness Scoring** (from @agent-layer/score) — Lighthouse-style CLI scanner:
+    - Score any API on agent-friendliness (0-100)
+    - Checks: discovery endpoints, error format, rate limit headers, auth docs, cost transparency, structured responses
+    - Built into gateway CLI: `lightlayer-gateway score https://api.example.com`
+    - Shows what the gateway adds to the score
+
 ### Key Architecture Decisions from agent-layer:
 - **Plugin ordering matters** — security → discovery → identity → rate limits → payments → analytics → proxy (proven in both TS and Python)
 - **Agent detection is foundational** — every other plugin depends on knowing if it's an agent and which one
@@ -80,6 +102,9 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
 - **Three identity modes (log/warn/enforce)** let users adopt gradually
 - **x402 is route-scoped** — different prices for different endpoints
 - **agents.txt > robots.txt for agents** — robots.txt is for crawlers, agents.txt is for agents (different rules, different semantics)
+- **Content negotiation is critical** — agents need JSON, humans need HTML; the gateway must detect and adapt
+- **MCP auto-generation from discovery config** — define capabilities once, get MCP tools for free
+- **API keys as gateway-level auth** — simpler than OAuth2 for most use cases, gateway manages keys centrally
 
 ## Why Go
 
@@ -245,6 +270,15 @@ plugins:
     # instructions: "REST API for widgets"
     # Auto-generates MCP tools from discovery capabilities
 
+  api_keys:
+    enabled: false
+    # store: sqlite  # sqlite (persistent) or memory (dev only)
+    # keys:
+    #   - id: key_prod_abc123
+    #     scopes: [read, write]
+    #     expires_at: 2027-01-01T00:00:00Z
+    #     metadata: { company: "Acme Corp" }
+
   agents_txt:
     enabled: true
     # rules:
@@ -291,6 +325,12 @@ lightlayer-gateway dev
 
 # Check status (queries admin API)
 lightlayer-gateway status
+
+# Score an API's agent-readiness (Lighthouse-style)
+lightlayer-gateway score https://api.example.com
+
+# Score with verbose output
+lightlayer-gateway score https://api.example.com --verbose
 ```
 
 ### Startup Output
@@ -371,11 +411,12 @@ handler := security.Middleware()(
 3. **OAuth2** — intercept /.well-known/oauth-authorization-server, /authorize, /token
 4. **MCP** — intercept /mcp endpoint (JSON-RPC 2.0)
 5. **Agents.txt** — enforce per-agent path access rules
-6. **Identity** — verify agent credentials (JWT/SPIFFE/WIMSE)
-7. **Rate Limits** — per-agent rate limiting (sliding window)
-8. **Payments** — x402 payment negotiation
-9. **Analytics** — log request (non-blocking, async flush)
-10. **→ Reverse Proxy → Origin** (with structured error wrapping on failures)
+6. **API Keys** — validate scoped API keys (simpler alternative to JWT)
+7. **Identity** — verify agent credentials (JWT/SPIFFE/WIMSE)
+8. **Rate Limits** — per-agent rate limiting (sliding window)
+9. **Payments** — x402 payment negotiation
+10. **Analytics** — log request (non-blocking, async flush)
+11. **→ Reverse Proxy → Origin** (with structured error wrapping + content negotiation on failures)
 
 ## File Structure
 
@@ -421,17 +462,23 @@ gateway/
 │   │   │   └── oauth2.go        # OAuth2 PKCE flow + discovery
 │   │   ├── mcp/
 │   │   │   └── mcp.go           # MCP JSON-RPC server (auto-generated tools)
-│   │   └── agentstxt/
-│   │       └── agentstxt.go     # agents.txt generation + enforcement
+│   │   ├── agentstxt/
+│   │   │   └── agentstxt.go     # agents.txt generation + enforcement
+│   │   └── apikeys/
+│   │       └── apikeys.go       # Scoped API key auth + management
 │   ├── detection/
 │   │   └── agent.go             # Agent User-Agent detection
 │   ├── admin/
 │   │   ├── admin.go             # Admin/Dashboard API server
 │   │   ├── routes.go            # REST API routes for dashboard
 │   │   └── websocket.go         # WebSocket for live logs/metrics
-│   └── store/
-│       ├── store.go             # Storage interface
-│       └── sqlite.go            # SQLite implementation (config, analytics, sessions)
+│   ├── store/
+│   │   ├── store.go             # Storage interface
+│   │   └── sqlite.go            # SQLite implementation (config, analytics, sessions)
+│   └── score/
+│       ├── scanner.go           # Agent-readiness scanner (port from @agent-layer/score)
+│       ├── checks.go            # Individual check implementations
+│       └── reporter.go          # Score output formatting
 ├── ui/                          # Frontend dashboard (React + TypeScript)
 │   ├── package.json
 │   ├── vite.config.ts
