@@ -75,18 +75,19 @@ type OriginConfig struct {
 
 // PluginsConfig groups all plugin configurations.
 type PluginsConfig struct {
-	Discovery  DiscoveryConfig  `yaml:"discovery"`
-	Identity   IdentityConfig   `yaml:"identity"`
-	Payments   PaymentsConfig   `yaml:"payments"`
-	RateLimits RateLimitsConfig `yaml:"rate_limits"`
-	Analytics  AnalyticsConfig  `yaml:"analytics"`
-	Security   SecurityConfig   `yaml:"security"`
-	AgentsTxt  AgentsTxtConfig  `yaml:"agents_txt"`
-	OAuth2     OAuth2Config     `yaml:"oauth2"`
-	MCP        MCPConfig        `yaml:"mcp"`
-	APIKeys    APIKeysConfig    `yaml:"api_keys"`
-	A2A        A2AConfig        `yaml:"a2a"`
-	AgUI       AgUIConfig       `yaml:"ag_ui"`
+	Discovery       DiscoveryConfig       `yaml:"discovery"`
+	Identity        IdentityConfig        `yaml:"identity"`
+	Payments        PaymentsConfig        `yaml:"payments"`
+	RateLimits      RateLimitsConfig      `yaml:"rate_limits"`
+	Analytics       AnalyticsConfig       `yaml:"analytics"`
+	Security        SecurityConfig        `yaml:"security"`
+	AgentsTxt       AgentsTxtConfig       `yaml:"agents_txt"`
+	OAuth2          OAuth2Config          `yaml:"oauth2"`
+	MCP             MCPConfig             `yaml:"mcp"`
+	APIKeys         APIKeysConfig         `yaml:"api_keys"`
+	A2A             A2AConfig             `yaml:"a2a"`
+	AgUI            AgUIConfig            `yaml:"ag_ui"`
+	AgentOnboarding AgentOnboardingConfig `yaml:"agent_onboarding"`
 }
 
 // DiscoveryConfig controls agent discovery endpoint serving.
@@ -328,6 +329,24 @@ type A2AConfig struct {
 type AgUIConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Endpoint string `yaml:"endpoint,omitempty"` // default: /ag-ui
+}
+
+// AgentOnboardingConfig controls the agent self-registration plugin.
+type AgentOnboardingConfig struct {
+	Enabled             bool                        `yaml:"enabled"`
+	ProvisioningWebhook string                      `yaml:"provisioning_webhook"`
+	WebhookSecret       string                      `yaml:"webhook_secret,omitempty"`
+	WebhookTimeout      string                      `yaml:"webhook_timeout,omitempty"` // duration string, default: 10s
+	RequireIdentity     bool                        `yaml:"require_identity,omitempty"`
+	AllowedProviders    []string                    `yaml:"allowed_providers,omitempty"`
+	AuthDocs            string                      `yaml:"auth_docs,omitempty"`
+	RateLimit           *AgentOnboardingRateLimitCfg `yaml:"rate_limit,omitempty"`
+}
+
+// AgentOnboardingRateLimitCfg controls registration rate limiting.
+type AgentOnboardingRateLimitCfg struct {
+	MaxRegistrations int    `yaml:"max_registrations,omitempty"` // per IP per window, default: 10
+	Window           string `yaml:"window,omitempty"`            // duration string, default: 1h
 }
 
 // LoadConfig reads a YAML config file, applies defaults, applies environment

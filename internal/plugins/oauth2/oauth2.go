@@ -93,6 +93,8 @@ func New() *Plugin {
 func (p *Plugin) Name() string { return "oauth2" }
 
 func (p *Plugin) Init(cfg map[string]interface{}) error {
+	slog.Warn("plugin oauth2 is deprecated, use agent_onboarding instead. Will be removed in v0.3")
+
 	if v, ok := cfg["issuer"].(string); ok {
 		p.cfg.Issuer = v
 	}

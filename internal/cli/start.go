@@ -16,10 +16,18 @@ import (
 	"github.com/lightlayer-dev/gateway/internal/config"
 	"github.com/lightlayer-dev/gateway/internal/plugins"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/a2a"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/agentstxt"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/analytics"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/apikeys"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/discovery"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/identity"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/oauth2"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/onboarding"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/payments"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/ratelimit"
+	_ "github.com/lightlayer-dev/gateway/internal/plugins/security"
 	"github.com/lightlayer-dev/gateway/internal/proxy"
 	"github.com/lightlayer-dev/gateway/internal/store"
 	"github.com/spf13/cobra"
@@ -291,7 +299,8 @@ func (gw *gateway) cleanup() {
 func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 	return []plugins.PluginConfig{
 		{Name: "security", Enabled: cfg.Plugins.Security.Enabled},
-		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled},
+		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled, Config: discoveryConfigMap(cfg)},
+		{Name: "agent_onboarding", Enabled: cfg.Plugins.AgentOnboarding.Enabled, Config: agentOnboardingConfigMap(cfg)},
 		{Name: "oauth2", Enabled: cfg.Plugins.OAuth2.Enabled, Config: oauth2ConfigMap(cfg)},
 		{Name: "mcp", Enabled: cfg.Plugins.MCP.Enabled, Config: mcpConfigMap(cfg)},
 		{Name: "a2a", Enabled: cfg.Plugins.A2A.Enabled, Config: a2aConfigMap(cfg)},
@@ -335,6 +344,7 @@ func printBanner(cmd *cobra.Command, cfg *config.Config) {
 		{"a2a", cfg.Plugins.A2A.Enabled, a2aDetail(cfg)},
 		{"ag_ui", cfg.Plugins.AgUI.Enabled, agUIDetail(cfg)},
 		{"api_keys", cfg.Plugins.APIKeys.Enabled, "scoped API key auth"},
+		{"agent_onboarding", cfg.Plugins.AgentOnboarding.Enabled, "agent self-registration via webhook"},
 	}
 
 	for _, p := range pluginList {
@@ -673,6 +683,91 @@ func apiKeysConfigMap(cfg *config.Config) map[string]interface{} {
 			keys[i] = km
 		}
 		m["keys"] = keys
+	}
+	return m
+}
+
+// discoveryConfigMap converts DiscoveryConfig into a generic map for the plugin,
+// including agent onboarding registration info when enabled.
+func discoveryConfigMap(cfg *config.Config) map[string]interface{} {
+	dc := cfg.Plugins.Discovery
+	m := map[string]interface{}{
+		"name": dc.Name,
+	}
+	if dc.Description != "" {
+		m["description"] = dc.Description
+	}
+	if dc.Version != "" {
+		m["version"] = dc.Version
+	}
+
+	// Derive URL from listen config.
+	url := fmt.Sprintf("http://%s:%d", cfg.Gateway.Listen.Host, cfg.Gateway.Listen.Port)
+	m["url"] = url
+
+	if len(dc.Capabilities) > 0 {
+		skills := make([]interface{}, len(dc.Capabilities))
+		for i, c := range dc.Capabilities {
+			skills[i] = map[string]interface{}{
+				"id":          c.Name,
+				"name":        c.Name,
+				"description": c.Description,
+			}
+		}
+		m["skills"] = skills
+	}
+
+	// If agent onboarding is enabled, add auth info for discovery endpoints.
+	if cfg.Plugins.AgentOnboarding.Enabled {
+		m["auth"] = map[string]interface{}{
+			"type": "agent_onboarding",
+			"name": "agent_onboarding",
+		}
+		m["llms_txt_sections"] = []interface{}{
+			map[string]interface{}{
+				"title":   "Authentication",
+				"content": "This API supports agent self-registration.\nRegister at: /agent/register",
+			},
+		}
+	}
+
+	return m
+}
+
+// agentOnboardingConfigMap converts AgentOnboardingConfig into a generic map for the plugin.
+func agentOnboardingConfigMap(cfg *config.Config) map[string]interface{} {
+	ao := cfg.Plugins.AgentOnboarding
+	m := map[string]interface{}{
+		"provisioning_webhook": ao.ProvisioningWebhook,
+	}
+	if ao.WebhookSecret != "" {
+		m["webhook_secret"] = ao.WebhookSecret
+	}
+	if ao.WebhookTimeout != "" {
+		m["webhook_timeout"] = ao.WebhookTimeout
+	}
+	if ao.RequireIdentity {
+		m["require_identity"] = true
+	}
+	if ao.AuthDocs != "" {
+		m["auth_docs"] = ao.AuthDocs
+	}
+	if len(ao.AllowedProviders) > 0 {
+		providers := make([]interface{}, len(ao.AllowedProviders))
+		for i, p := range ao.AllowedProviders {
+			providers[i] = p
+		}
+		m["allowed_providers"] = providers
+	}
+	if ao.RateLimit != nil {
+		rl := map[string]interface{}{}
+		if ao.RateLimit.MaxRegistrations != 0 {
+			rl["max_registrations"] = ao.RateLimit.MaxRegistrations
+		}
+		if ao.RateLimit.Window != "" {
+			rl["window"] = ao.RateLimit.Window
+		}
+		m["rate_limit"] = rl
 	}
 	return m
 }

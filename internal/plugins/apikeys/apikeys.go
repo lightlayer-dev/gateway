@@ -208,6 +208,8 @@ func New() *Plugin {
 func (p *Plugin) Name() string { return "api_keys" }
 
 func (p *Plugin) Init(cfg map[string]interface{}) error {
+	slog.Warn("plugin api_keys is deprecated, use agent_onboarding instead. Will be removed in v0.3")
+
 	p.cfg.Prefix = "llgw_"
 	if v, ok := cfg["prefix"].(string); ok && v != "" {
 		p.cfg.Prefix = v

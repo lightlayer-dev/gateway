@@ -45,7 +45,7 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
    - Facilitator verification + settlement
    - Per-route pricing config
 
-6. **OAuth2 with PKCE** — full authorization code flow:
+6. **OAuth2 with PKCE** *(deprecated — use Agent Onboarding)* — full authorization code flow:
    - PKCE code verifier/challenge generation
    - `/.well-known/oauth-authorization-server` discovery endpoint
    - Token exchange, refresh, and validation with scope checking
@@ -62,7 +62,7 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
    - Tool call streaming (TOOL_CALL_START/ARGS/END/RESULT)
    - State management (STATE_SNAPSHOT, STATE_DELTA)
 
-9. **API Key Auth** — simple key-based authentication as an alternative to OAuth2/JWT
+9. **API Key Auth** *(deprecated — use Agent Onboarding)* — simple key-based authentication as an alternative to OAuth2/JWT
 
 10. **Analytics** — agent traffic telemetry with batch flushing:
     - Per-request: agent name, method, path, status, duration, content type, response size
@@ -75,7 +75,18 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
 
 13. **agents.txt** — per-agent access control with rate limits, preferred interface (REST/MCP/GraphQL/A2A), and auth requirements
 
-14. **API Key Auth** — scoped API keys as a simpler alternative to OAuth2/JWT:
+14. **Agent Onboarding** — agent self-registration via webhook-based credential provisioning:
+    - `POST /agent/register` endpoint for programmatic agent sign-up
+    - Webhook to API owner's provisioning system (HMAC-SHA256 signed)
+    - Standardized credential format: api_key, oauth2_client_credentials, bearer
+    - 401 response for unauthenticated agents with registration info
+    - Per-IP rate limiting on registration
+    - Optional identity token verification
+    - Provider allow-listing
+    - Gateway is stateless — never stores credentials
+    - Deprecates identity, api_keys, and oauth2 plugins (removed in v0.3)
+
+15. **API Key Auth** *(deprecated — use Agent Onboarding)* — scoped API keys as a simpler alternative to OAuth2/JWT:
     - ScopedApiKey: keyId, companyId, userId, scopes, expiresAt, metadata
     - Pluggable store interface (in-memory for dev, SQLite for production)
     - Key generation, validation, scope checking, expiration
@@ -316,7 +327,18 @@ plugins:
     # Translates origin responses into AG-UI event streams
     # Compatible with CopilotKit, Google ADK
 
-  api_keys:
+  agent_onboarding:
+    enabled: false
+    # provisioning_webhook: https://api.example.com/internal/provision-agent
+    # webhook_secret: ${WEBHOOK_SECRET}
+    # webhook_timeout: 10s
+    # require_identity: false
+    # allowed_providers: []
+    # rate_limit:
+    #   max_registrations: 10
+    #   window: 1h
+
+  api_keys:  # deprecated — use agent_onboarding
     enabled: false
     # store: sqlite  # sqlite (persistent) or memory (dev only)
     # keys:
@@ -456,17 +478,18 @@ handler := security.Middleware()(
 
 1. **Security** — CORS, security headers, HSTS, CSP
 2. **Discovery** — intercept /.well-known/ai, /.well-known/agent.json, /llms.txt, /agents.txt
-3. **OAuth2** — intercept /.well-known/oauth-authorization-server, /authorize, /token
-4. **MCP** — intercept /mcp endpoint (JSON-RPC 2.0 tools)
-4b. **A2A** — intercept /a2a endpoint (JSON-RPC 2.0 task lifecycle)
-4c. **AG-UI** — intercept /ag-ui endpoint (SSE streaming)
-5. **Agents.txt** — enforce per-agent path access rules
-6. **API Keys** — validate scoped API keys (simpler alternative to JWT)
-7. **Identity** — verify agent credentials (JWT/SPIFFE/WIMSE)
-8. **Rate Limits** — per-agent rate limiting (sliding window)
-9. **Payments** — x402 payment negotiation
-10. **Analytics** — log request (non-blocking, async flush)
-11. **→ Reverse Proxy → Origin** (with structured error wrapping + content negotiation on failures)
+3. **Agent Onboarding** — handle POST /agent/register, return 401 with registration info for unauthenticated requests
+4. **OAuth2** *(deprecated)* — intercept /.well-known/oauth-authorization-server, /authorize, /token
+5. **MCP** — intercept /mcp endpoint (JSON-RPC 2.0 tools)
+5b. **A2A** — intercept /a2a endpoint (JSON-RPC 2.0 task lifecycle)
+5c. **AG-UI** — intercept /ag-ui endpoint (SSE streaming)
+6. **Agents.txt** — enforce per-agent path access rules
+7. **API Keys** *(deprecated)* — validate scoped API keys
+8. **Identity** *(deprecated)* — verify agent credentials (JWT/SPIFFE/WIMSE)
+9. **Rate Limits** — per-agent rate limiting (sliding window)
+10. **Payments** — x402 payment negotiation
+11. **Analytics** — log request (non-blocking, async flush)
+12. **→ Reverse Proxy → Origin** (with structured error wrapping + content negotiation on failures)
 
 ## File Structure
 
@@ -514,8 +537,13 @@ gateway/
 │   │   │   └── mcp.go           # MCP JSON-RPC server (auto-generated tools)
 │   │   ├── agentstxt/
 │   │   │   └── agentstxt.go     # agents.txt generation + enforcement
+│   │   ├── onboarding/
+│   │   │   ├── onboarding.go    # Agent self-registration + 401 handler
+│   │   │   ├── webhook.go       # Webhook HTTP client, HMAC signing
+│   │   │   ├── types.go         # Request/response types
+│   │   │   └── onboarding_test.go
 │   │   ├── apikeys/
-│   │   │   └── apikeys.go       # Scoped API key auth + management
+│   │   │   └── apikeys.go       # Scoped API key auth + management (deprecated)
 │   │   ├── a2a/
 │   │   │   ├── a2a.go           # A2A JSON-RPC server (full protocol v1.0)
 │   │   │   ├── tasks.go         # Task lifecycle management
