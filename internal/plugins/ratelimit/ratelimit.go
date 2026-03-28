@@ -20,6 +20,7 @@ func init() {
 
 // window tracks request counts within a sliding window.
 type window struct {
+	mu        sync.Mutex
 	count     int
 	expiresAt time.Time
 }
@@ -169,13 +170,21 @@ func (p *Plugin) increment(key string, windowDur time.Duration) int {
 	val, loaded := p.windows.Load(key)
 	if loaded {
 		w := val.(*window)
+		w.mu.Lock()
 		if now.Before(w.expiresAt) {
 			w.count++
-			return w.count
+			c := w.count
+			w.mu.Unlock()
+			return c
 		}
+		// Window expired — reset it under the lock.
+		w.count = 1
+		w.expiresAt = now.Add(windowDur)
+		w.mu.Unlock()
+		return 1
 	}
 
-	// New or expired window.
+	// New window.
 	w := &window{
 		count:     1,
 		expiresAt: now.Add(windowDur),
