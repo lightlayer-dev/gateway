@@ -158,6 +158,53 @@ func TestSQLiteStore_AgentsTable(t *testing.T) {
 	assert.Equal(t, int64(2), total)
 }
 
+func TestSQLiteStore_GetAgents(t *testing.T) {
+	s := tempDB(t)
+
+	require.NoError(t, s.SaveEvent(sampleEvent("g1", "ClaudeBot", "/a", 200)))
+	require.NoError(t, s.SaveEvent(sampleEvent("g2", "ClaudeBot", "/b", 200)))
+	require.NoError(t, s.SaveEvent(sampleEvent("g3", "GPTBot", "/c", 200)))
+
+	agents, err := s.GetAgents()
+	require.NoError(t, err)
+	require.Len(t, agents, 2)
+	// Ordered by total_requests DESC.
+	assert.Equal(t, "ClaudeBot", agents[0].Name)
+	assert.Equal(t, int64(2), agents[0].TotalRequests)
+	assert.Equal(t, "GPTBot", agents[1].Name)
+}
+
+func TestSQLiteStore_GetPaymentEvents(t *testing.T) {
+	s := tempDB(t)
+
+	// Normal event (no payment).
+	require.NoError(t, s.SaveEvent(sampleEvent("p1", "ClaudeBot", "/a", 200)))
+
+	// Event with payment info.
+	pe := sampleEvent("p2", "GPTBot", "/premium", 200)
+	pe.PaymentInfo = `{"amount":"0.01","currency":"USDC"}`
+	require.NoError(t, s.SaveEvent(pe))
+
+	events, err := s.GetPaymentEvents(10)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "p2", events[0].ID)
+	assert.Contains(t, events[0].PaymentInfo, "USDC")
+}
+
+func TestSQLiteStore_GetAgentRequestCounts(t *testing.T) {
+	s := tempDB(t)
+
+	require.NoError(t, s.SaveEvent(sampleEvent("c1", "ClaudeBot", "/a", 200)))
+	require.NoError(t, s.SaveEvent(sampleEvent("c2", "ClaudeBot", "/b", 200)))
+	require.NoError(t, s.SaveEvent(sampleEvent("c3", "GPTBot", "/c", 200)))
+
+	counts, err := s.GetAgentRequestCounts(time.Now().Add(-time.Minute))
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), counts["ClaudeBot"])
+	assert.Equal(t, int64(1), counts["GPTBot"])
+}
+
 func TestNewSQLiteStore_InvalidPath(t *testing.T) {
 	_, err := NewSQLiteStore(filepath.Join(os.DevNull, "impossible", "test.db"))
 	assert.Error(t, err)

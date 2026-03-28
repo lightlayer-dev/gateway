@@ -61,6 +61,62 @@ export interface ConfigResponse {
   admin: { enabled: boolean; port: number }
 }
 
+export interface Capability {
+  name: string
+  description: string
+  methods: string[]
+  paths: string[]
+}
+
+export interface DiscoveryPreview {
+  well_known_ai: Record<string, unknown>
+  agent_card: Record<string, unknown>
+  agents_txt: string
+  llms_txt: string
+}
+
+export interface RateLimitUsageEntry {
+  agent: string
+  used: number
+  limit: number
+  window: string
+  percent: number
+}
+
+export interface RateLimitUsageResponse {
+  enabled: boolean
+  default?: { requests: number; window: string }
+  per_agent?: Record<string, { requests: number; window: string }>
+  usage: RateLimitUsageEntry[]
+}
+
+export interface AgentRecord {
+  name: string
+  first_seen: string
+  last_seen: string
+  total_requests: number
+  verified: boolean
+}
+
+export interface AgentActivityResponse {
+  agents: AgentRecord[]
+}
+
+export interface PaymentEvent {
+  id: string
+  timestamp: string
+  agent: string
+  method: string
+  path: string
+  status_code: number
+  duration_ms: number
+  payment_info: string
+}
+
+export interface PaymentHistoryResponse {
+  payments: PaymentEvent[]
+}
+
 // ── Endpoints ────────────────────────────────────────────────────────────
 
 export const fetchHealth = () => request<HealthResponse>('/api/health')
@@ -104,3 +160,15 @@ export const importConfig = (yaml: string) =>
 
 export const fetchAgents = () =>
   request<{ agents: Array<{ name: string; count: number }> }>('/api/agents')
+
+export const fetchDiscoveryPreview = () =>
+  request<DiscoveryPreview>('/api/discovery/preview')
+
+export const fetchRateLimitUsage = () =>
+  request<RateLimitUsageResponse>('/api/rate-limits/usage')
+
+export const fetchAgentActivity = () =>
+  request<AgentActivityResponse>('/api/agents/activity')
+
+export const fetchPaymentHistory = (limit = 50) =>
+  request<PaymentHistoryResponse>(`/api/payments/history?limit=${limit}`)
