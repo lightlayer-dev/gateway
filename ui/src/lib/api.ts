@@ -39,10 +39,11 @@ export interface StatusResponse {
 export interface Metrics {
   total_requests: number
   unique_agents: number
-  avg_duration_ms: number
+  avg_latency_ms: number
   error_rate: number
-  top_agents: Array<{ name: string; count: number }>
-  top_paths: Array<{ path: string; count: number }>
+  top_agents: Array<{ agent: string; count: number; last_seen?: string }>
+  top_paths: Array<{ path: string; method?: string; count: number; avg_latency_ms?: number }>
+  status_distribution: Record<string, number>
   requests_by_hour: Array<{ hour: string; count: number }>
 }
 
@@ -53,10 +54,10 @@ export interface AnalyticsResponse {
 
 export interface ConfigResponse {
   gateway: {
-    listen: { port: number; host: string }
+    listen: { port: number; host: string; tls?: { cert: string; key: string } }
     origin: { url: string; timeout: string }
   }
-  plugins: Record<string, unknown>
+  plugins: Record<string, { enabled?: boolean; [key: string]: unknown }>
   admin: { enabled: boolean; port: number }
 }
 
@@ -80,6 +81,25 @@ export const updateConfig = (body: unknown) =>
   request<{ status: string }>('/api/config', {
     method: 'PUT',
     body: JSON.stringify(body),
+  })
+
+export const updatePluginConfig = (body: unknown) =>
+  request<{ status: string }>('/api/config/plugins', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+
+export const exportConfig = async (): Promise<string> => {
+  const res = await fetch(`${BASE}/api/config/export`)
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`)
+  return res.text()
+}
+
+export const importConfig = (yaml: string) =>
+  request<{ status: string }>('/api/config/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-yaml' },
+    body: yaml,
   })
 
 export const fetchAgents = () =>

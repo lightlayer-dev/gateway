@@ -50,18 +50,28 @@ type Metrics struct {
 	TopAgents          []AgentCount       `json:"top_agents"`
 	TopPaths           []PathCount        `json:"top_paths"`
 	StatusDistribution map[int]int64      `json:"status_distribution"`
+	RequestsByHour     []HourlyCount      `json:"requests_by_hour"`
+}
+
+// HourlyCount pairs an hour label with its request count.
+type HourlyCount struct {
+	Hour  string `json:"hour"`
+	Count int64  `json:"count"`
 }
 
 // AgentCount pairs an agent name with its request count.
 type AgentCount struct {
-	Agent string `json:"agent"`
-	Count int64  `json:"count"`
+	Agent    string `json:"agent"`
+	Count    int64  `json:"count"`
+	LastSeen string `json:"last_seen,omitempty"`
 }
 
 // PathCount pairs a request path with its request count.
 type PathCount struct {
-	Path  string `json:"path"`
-	Count int64  `json:"count"`
+	Path         string  `json:"path"`
+	Method       string  `json:"method,omitempty"`
+	Count        int64   `json:"count"`
+	AvgLatencyMs float64 `json:"avg_latency_ms,omitempty"`
 }
 
 // AgentRecord tracks a known agent for the dashboard agent list.
