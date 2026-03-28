@@ -26,3 +26,15 @@ make run      # Build and start
 ## Architecture
 
 See [DESIGN.md](DESIGN.md) for full design document.
+
+## License
+
+LightLayer Gateway is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
+
+- **Use, modify, and self-host freely** — no restrictions for your own use
+- **Cannot be offered as a commercial hosted service** — protects against cloud providers reselling it
+- **Converts to Apache 2.0** on March 28, 2030 (4 years from release)
+
+For commercial licensing inquiries, contact isaac@lightlayer.dev.
+
+© 2026 Flockly, Inc.
