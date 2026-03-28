@@ -452,6 +452,8 @@ func (p *Plugin) Name() string { return "identity" }
 
 // Init parses config and prepares the plugin.
 func (p *Plugin) Init(raw map[string]interface{}) error {
+	slog.Warn("plugin identity is deprecated, use agent_onboarding instead. Will be removed in v0.3")
+
 	cfg, err := parseConfig(raw)
 	if err != nil {
 		return fmt.Errorf("identity: %w", err)

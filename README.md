@@ -4,7 +4,9 @@
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-BSL_1.1-blue)
 
-**A reverse proxy that makes any API agent-ready.** Zero code changes — put it in front of your API and AI agents can discover, authenticate, pay for, and interact with your service automatically.
+**A reverse proxy that makes any API agent-ready.** Zero code changes — put it in front of your API and agents can discover it, onboard themselves, pay for access, and interact with your service automatically.
+
+**Discovery + Onboarding + Payments Bridge + Analytics** — the full agent lifecycle, handled by the gateway.
 
 Think **Cloudflare, but for AI agent traffic.**
 
@@ -90,17 +92,18 @@ LightLayer Gateway sits between AI agents and your API. It automatically handles
 | Feature | Description |
 |---------|-------------|
 | **Discovery** | Serves `/.well-known/ai`, `/.well-known/agent.json`, `/llms.txt`, `/agents.txt` — so agents can find and understand your API |
-| **Identity** | Verifies agent credentials (JWT/SPIFFE/WIMSE) per the IETF draft-klrc-aiagent-auth spec |
+| **Agent Onboarding** | Agents self-register via `POST /agent/register` and get credentials back — no human intervention |
 | **Rate Limiting** | Per-agent sliding window rate limits with configurable overrides |
-| **Payments** | x402 micropayment negotiation — agents pay per request |
+| **Payments** | x402 micropayments with billing webhook bridge — agents pay crypto, origin gets a billing event |
 | **Analytics** | Agent traffic logging with SQLite storage and dashboard charts |
 | **Security** | CORS, HSTS, CSP, X-Content-Type-Options, and more |
-| **OAuth2** | Full PKCE authorization flow with discovery endpoint |
 | **MCP** | Auto-generates Model Context Protocol tools from your API |
 | **A2A** | Full Google A2A protocol server — your REST API becomes A2A-compatible |
 | **AG-UI** | SSE streaming for CopilotKit, Google ADK, and other agent UIs |
-| **API Keys** | Scoped API key auth as a simpler alternative to OAuth2 |
 | **agents.txt** | Per-agent access control with rate limits and preferred interface |
+| **Identity** *(deprecated)* | Verifies agent JWT/SPIFFE credentials — use Agent Onboarding instead |
+| **OAuth2** *(deprecated)* | PKCE authorization flow — use Agent Onboarding instead |
+| **API Keys** *(deprecated)* | Scoped API key auth — use Agent Onboarding instead |
 
 <!-- Screenshot placeholder: ![Dashboard](docs/dashboard.png) -->
 
@@ -121,7 +124,7 @@ LightLayer Gateway sits between AI agents and your API. It automatically handles
                     └──────────────────────────┘
 ```
 
-The plugin pipeline executes in order: Security → Discovery → OAuth2 → MCP → A2A → AG-UI → agents.txt → API Keys → Identity → Rate Limits → Payments → Analytics → Proxy.
+The plugin pipeline executes in order: Security → Discovery → Agent Onboarding → OAuth2 → MCP → A2A → AG-UI → agents.txt → API Keys → Identity → Rate Limits → Payments → Analytics → Proxy.
 
 Single binary. Single container. No external databases — SQLite handles everything.
 
@@ -233,6 +236,18 @@ plugins:
   agents_txt:
     enabled: true
 
+  # Agent onboarding — self-registration via webhook
+  agent_onboarding:
+    enabled: false
+    # provisioning_webhook: https://api.example.com/internal/provision-agent
+    # webhook_secret: ${WEBHOOK_SECRET}
+    # webhook_timeout: 10s
+    # require_identity: false
+    # allowed_providers: []       # Empty = allow all
+    # rate_limit:
+    #   max_registrations: 10     # Per IP per hour
+    #   window: 1h
+
 admin:
   enabled: true
   port: 9090               # Dashboard + Admin API port
@@ -273,17 +288,18 @@ Plugins execute as middleware in a fixed order optimized for correctness:
 
 1. **Security** — CORS + security headers (runs first to protect all responses)
 2. **Discovery** — Intercepts `/.well-known/ai`, `/agents.txt`, `/llms.txt`
-3. **OAuth2** — Intercepts auth endpoints
-4. **MCP** — Intercepts `/mcp` (JSON-RPC 2.0)
-5. **A2A** — Intercepts `/a2a` (JSON-RPC 2.0 task lifecycle)
-6. **AG-UI** — Intercepts `/ag-ui` (SSE streaming)
-7. **agents.txt** — Enforces per-agent path access rules
-8. **API Keys** — Validates scoped API keys
-9. **Identity** — Verifies agent JWT/SPIFFE credentials
-10. **Rate Limits** — Enforces per-agent rate limits
-11. **Payments** — x402 payment negotiation
-12. **Analytics** — Logs request (async, non-blocking)
-13. **→ Reverse Proxy → Origin**
+3. **Agent Onboarding** — Handles `POST /agent/register`, returns 401 with registration info for unauthenticated requests
+4. **OAuth2** *(deprecated)* — Intercepts auth endpoints
+5. **MCP** — Intercepts `/mcp` (JSON-RPC 2.0)
+6. **A2A** — Intercepts `/a2a` (JSON-RPC 2.0 task lifecycle)
+7. **AG-UI** — Intercepts `/ag-ui` (SSE streaming)
+8. **agents.txt** — Enforces per-agent path access rules
+9. **API Keys** *(deprecated)* — Validates scoped API keys
+10. **Identity** *(deprecated)* — Verifies agent JWT/SPIFFE credentials
+11. **Rate Limits** — Enforces per-agent rate limits
+12. **Payments** — x402 payment negotiation
+13. **Analytics** — Logs request (async, non-blocking)
+14. **→ Reverse Proxy → Origin**
 
 ### Writing Custom Plugins
 
@@ -307,6 +323,136 @@ func init() {
     })
 }
 ```
+
+---
+
+## Agent Onboarding
+
+Agent onboarding lets AI agents register for API credentials programmatically — no human intervention needed. When an agent discovers your API via `/.well-known/agent.json` or `/llms.txt`, it can `POST /agent/register` to get credentials back instantly.
+
+### How It Works
+
+1. Agent sends `POST /agent/register` with its identity
+2. Gateway forwards the request to your **provisioning webhook**
+3. Your webhook creates credentials in your auth system (Auth0, Supabase, Firebase, etc.)
+4. Gateway returns the credentials to the agent
+5. Agent uses credentials for all subsequent requests
+
+The gateway never stores credentials — it's a stateless facilitator.
+
+### Configuration
+
+```yaml
+plugins:
+  agent_onboarding:
+    enabled: true
+    provisioning_webhook: https://api.example.com/internal/provision-agent
+    webhook_secret: ${WEBHOOK_SECRET}    # HMAC-SHA256 signature for webhook calls
+    webhook_timeout: 10s
+    require_identity: false               # If true, agent must present a signed JWT
+    rate_limit:
+      max_registrations: 10              # Per IP per hour
+      window: 1h
+    allowed_providers: []                # Empty = allow all. ["Anthropic", "OpenAI"] to restrict
+```
+
+### Example Webhook Implementation
+
+Your webhook receives a POST from the gateway and returns credentials:
+
+```python
+# FastAPI example
+@app.post("/internal/provision-agent")
+async def provision_agent(request: Request):
+    body = await request.json()
+
+    # Verify HMAC signature (optional)
+    signature = request.headers.get("X-Webhook-Signature")
+    # ... verify with your webhook_secret
+
+    # Create credentials in your auth system
+    api_key = create_api_key(
+        agent_id=body["agent_id"],
+        agent_name=body["agent_name"],
+        provider=body["agent_provider"],
+    )
+
+    return {
+        "status": "provisioned",
+        "credentials": {
+            "type": "api_key",
+            "token": api_key,
+            "header": "X-API-Key",
+            "expires_at": "2027-01-01T00:00:00Z"
+        }
+    }
+```
+
+### Unauthenticated Request Handling
+
+When an agent hits the API without credentials, the gateway returns a helpful 401:
+
+```json
+{
+  "error": "auth_required",
+  "message": "This API requires authentication. Register to get credentials.",
+  "register_url": "/agent/register",
+  "supported_credential_types": ["api_key", "oauth2_client_credentials", "bearer"]
+}
+```
+
+### Deprecation Notice
+
+The **identity**, **api_keys**, and **oauth2** plugins are deprecated in favor of **agent_onboarding**. They will be removed in v0.3. The agent onboarding plugin replaces gateway-level auth with a webhook-based model where credentials come from the API owner's auth system, not the gateway.
+
+---
+
+## Agent Payments
+
+The payments plugin bridges x402 crypto payments with the origin's own billing system. The API owner never touches crypto. The agent never touches Stripe. The gateway is the adapter.
+
+### Full Agent Lifecycle
+
+```
+Discovery → Onboarding → Free Tier → Payment → Paid Tier
+    │            │            │           │          │
+    ▼            ▼            ▼           ▼          ▼
+ Agent finds  Agent gets  Agent uses  Agent pays  Origin updates
+ the API via  credentials  free quota  via x402    agent's tier
+ /.well-known  via POST    until 429   (crypto)   via billing
+              /agent/      from                    webhook
+              register     origin
+```
+
+### How the Billing Bridge Works
+
+1. Agent uses free tier credentials, origin returns **429** (quota exceeded)
+2. Gateway intercepts the 429, returns **402** with x402 payment info
+3. Agent pays via x402 (crypto)
+4. Gateway verifies payment with x402 facilitator
+5. Gateway calls the origin's **billing webhook** with payment details
+6. Origin updates the agent's quota/tier in their own system (Stripe, DB, whatever)
+7. Gateway retries the original request
+
+### Configuration
+
+```yaml
+plugins:
+  payments:
+    enabled: true
+    facilitator: https://x402.org/facilitator
+    pay_to: "0xYourWalletAddress"
+    billing_webhook: https://api.example.com/api/agent-payment
+    billing_webhook_secret: ${BILLING_WEBHOOK_SECRET}
+    billing_webhook_timeout: 10s
+    routes:
+      - path: /api/premium/*
+        price: "0.01"
+        currency: USDC
+        description: "Premium API access"
+```
+
+The billing webhook receives a POST with `{ agent_id, amount, currency, tx_hash, network, timestamp }` signed with HMAC-SHA256. The origin processes the payment in their own billing system and returns 200 OK.
 
 ---
 

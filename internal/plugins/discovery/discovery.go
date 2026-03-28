@@ -40,12 +40,14 @@ type A2ASkill struct {
 
 // A2AAuthScheme describes authentication the agent supports.
 type A2AAuthScheme struct {
-	Type             string            `json:"type"`
-	In               string            `json:"in,omitempty"`
-	Name             string            `json:"name,omitempty"`
-	AuthorizationURL string            `json:"authorizationUrl,omitempty"`
-	TokenURL         string            `json:"tokenUrl,omitempty"`
-	Scopes           map[string]string `json:"scopes,omitempty"`
+	Type                     string            `json:"type"`
+	In                       string            `json:"in,omitempty"`
+	Name                     string            `json:"name,omitempty"`
+	AuthorizationURL         string            `json:"authorizationUrl,omitempty"`
+	TokenURL                 string            `json:"tokenUrl,omitempty"`
+	Scopes                   map[string]string `json:"scopes,omitempty"`
+	RegistrationURL          string            `json:"registration_url,omitempty"`
+	SupportedCredentialTypes []string          `json:"supported_credential_types,omitempty"`
 }
 
 // A2AProvider holds organization info.
@@ -290,7 +292,7 @@ func generateAgentCard(cfg *UnifiedDiscoveryConfig) *A2AAgentCard {
 		if authType == "api_key" {
 			authType = "apiKey"
 		}
-		card.Authentication = &A2AAuthScheme{
+		scheme := &A2AAuthScheme{
 			Type:             authType,
 			In:               cfg.Auth.In,
 			Name:             cfg.Auth.Name,
@@ -298,6 +300,11 @@ func generateAgentCard(cfg *UnifiedDiscoveryConfig) *A2AAgentCard {
 			TokenURL:         cfg.Auth.TokenURL,
 			Scopes:           cfg.Auth.Scopes,
 		}
+		if authType == "agent_onboarding" {
+			scheme.RegistrationURL = "/agent/register"
+			scheme.SupportedCredentialTypes = []string{"api_key", "oauth2_client_credentials", "bearer"}
+		}
+		card.Authentication = scheme
 	}
 
 	for _, s := range cfg.Skills {
