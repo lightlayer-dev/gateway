@@ -123,15 +123,9 @@ gateway:
 plugins:
   discovery:
     enabled: false
-  identity:
-    enabled: false
   payments:
     enabled: false
-  rate_limits:
-    enabled: false
   analytics:
-    enabled: false
-  security:
     enabled: false
 admin:
   enabled: false

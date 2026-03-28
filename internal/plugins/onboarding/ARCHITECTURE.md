@@ -283,14 +283,8 @@ Agent wallets are emerging (Coinbase AgentKit, Crossmint) but still early. Futur
 ## What Stays
 
 - **Discovery** — how agents find the API. Now also advertises the registration endpoint.
-- **Rate limiting** — still needed per-agent after they're authenticated.
-- **Payments (x402)** — orthogonal to auth.
+- **Payments (x402)** — orthogonal to auth. Bridges crypto payments to origin billing.
 - **Analytics** — tracks registrations as events.
-- **Security** — CORS, headers, robots.txt still needed.
-- **A2A** — task protocol, unrelated to auth.
-- **MCP** — tool protocol, unrelated to auth.
-- **AG-UI** — streaming protocol, unrelated to auth.
-- **agents.txt** — access control by agent name, still useful.
 
 ## Discovery Integration
 

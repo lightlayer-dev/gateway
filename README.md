@@ -4,9 +4,9 @@
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-BSL_1.1-blue)
 
-**A reverse proxy that makes any API agent-ready.** Zero code changes — put it in front of your API and agents can discover it, onboard themselves, pay for access, and interact with your service automatically.
+**A reverse proxy that makes any API agent-ready.** Zero code changes — put it in front of your API and agents can discover it, onboard themselves, pay for access, and see what's happening.
 
-**Discovery + Onboarding + Payments Bridge + Analytics** — the full agent lifecycle, handled by the gateway.
+**Find the API. Register. Pay. See what's happening.** — the full agent lifecycle, handled by the gateway.
 
 Think **Cloudflare, but for AI agent traffic.**
 
@@ -91,16 +91,10 @@ LightLayer Gateway sits between AI agents and your API. It automatically handles
 
 | Feature | Description |
 |---------|-------------|
-| **Discovery** | Serves `/.well-known/ai`, `/.well-known/agent.json`, `/llms.txt`, `/agents.txt` — so agents can find and understand your API |
-| **Agent Onboarding** | Agents self-register via `POST /agent/register` and get credentials back — no human intervention |
-| **Rate Limiting** | Per-agent sliding window rate limits with configurable overrides |
-| **Payments** | x402 micropayments with billing webhook bridge — agents pay crypto, origin gets a billing event |
+| **Discovery** | Serves `/llms.txt`, `/llms-full.txt`, `/.well-known/agent.json` (A2A Agent Card), `/agents.txt` — so agents can find and understand your API |
+| **Onboarding** | Agents self-register via `POST /agent/register` and get credentials back — no human intervention |
+| **Payments** | x402 micropayments with billing webhook bridge — agents pay crypto, your origin gets a billing event. **The bridge between crypto rails and your existing billing system.** |
 | **Analytics** | Agent traffic logging with SQLite storage and dashboard charts |
-| **Security** | CORS, HSTS, CSP, X-Content-Type-Options, and more |
-| **MCP** | Auto-generates Model Context Protocol tools from your API |
-| **A2A** | Full Google A2A protocol server — your REST API becomes A2A-compatible |
-| **AG-UI** | SSE streaming for CopilotKit, Google ADK, and other agent UIs |
-| **agents.txt** | Per-agent access control with rate limits and preferred interface |
 
 <!-- Screenshot placeholder: ![Dashboard](docs/dashboard.png) -->
 
@@ -112,192 +106,68 @@ LightLayer Gateway sits between AI agents and your API. It automatically handles
 ┌─────────────┐     ┌──────────────────────────┐     ┌──────────────┐
 │   AI Agent   │────▶│   LightLayer Gateway     │────▶│  Origin API  │
 │  (Claude,    │     │                          │     │  (any lang,  │
-│   GPT, etc.) │◀────│  Security → Discovery →  │◀────│   any stack) │
-└─────────────┘     │  Onboarding → Rate Limits │     └──────────────┘
-                    │  → Payments → Analytics → │
+│   GPT, etc.) │◀────│  Discovery → Onboarding  │◀────│   any stack) │
+└─────────────┘     │  → Payments → Analytics   │     └──────────────┘
                     │  → Reverse Proxy          │
                     │                          │
                     │  Dashboard UI (port 9090) │
                     └──────────────────────────┘
 ```
 
-The plugin pipeline executes in order: Security → Discovery → Agent Onboarding → MCP → A2A → AG-UI → agents.txt → Rate Limits → Payments → Analytics → Proxy.
+The plugin pipeline executes in order: **Discovery → Agent Onboarding → Payments → Analytics → Proxy**.
 
 Single binary. Single container. No external databases — SQLite handles everything.
 
 ---
 
-## Configuration
+## Agent Payments (x402)
 
-The gateway is configured via `gateway.yaml`. Generate a starter config with:
+The payments plugin is the core of the gateway's monetization story. It bridges x402 crypto micropayments with the origin's own billing system. **The API owner never touches crypto. The agent never touches Stripe. The gateway is the adapter.**
 
-```bash
-lightlayer-gateway init
+### Full Agent Lifecycle
+
+```
+Discovery → Onboarding → Free Tier → Payment → Paid Tier
+    │            │            │           │          │
+    ▼            ▼            ▼           ▼          ▼
+ Agent finds  Agent gets  Agent uses  Agent pays  Origin updates
+ the API via  credentials  free quota  via x402    agent's tier
+ /llms.txt    via POST    until 429   (crypto)   via billing
+ /agent.json  /agent/      from                    webhook
+              register     origin
 ```
 
-### Configuration Reference
+### How the Billing Bridge Works
+
+1. Agent uses free tier credentials, origin returns **429** (quota exceeded)
+2. Gateway intercepts the 429, returns **402** with x402 payment info
+3. Agent pays via x402 (crypto)
+4. Gateway verifies payment with x402 facilitator
+5. Gateway calls the origin's **billing webhook** with payment details
+6. Origin updates the agent's quota/tier in their own system (Stripe, DB, whatever)
+7. Gateway retries the original request
+
+This means any API with an existing billing system can accept agent payments without adopting crypto infrastructure. The gateway handles the translation.
+
+### Payments Configuration
 
 ```yaml
-gateway:
-  listen:
-    port: 8080              # Proxy listen port
-    host: 0.0.0.0           # Bind address
-    # tls:
-    #   cert: /path/to/cert.pem
-    #   key: /path/to/key.pem
-
-  origin:
-    url: https://api.example.com  # Your API's URL
-    timeout: 30s                  # Request timeout
-    # retries: 2                  # Retry failed requests
-
 plugins:
-  # Agent discovery — serves machine-readable API metadata
-  discovery:
-    enabled: true
-    name: "My API"
-    description: "Description of your API"
-    version: "1.0.0"
-    capabilities:
-      - name: "widgets"
-        description: "CRUD operations for widgets"
-        methods: ["GET", "POST", "PUT", "DELETE"]
-        paths: ["/api/widgets", "/api/widgets/*"]
-
-  # x402 micropayments
   payments:
-    enabled: false
-    # facilitator: https://x402.org/facilitator
-    # routes:
-    #   - path: /api/premium/*
-    #     price: "0.01"
-    #     currency: USDC
-
-  # Per-agent rate limiting
-  rate_limits:
     enabled: true
-    default:
-      requests: 100
-      window: 1m
-    # per_agent:
-    #   claude: { requests: 500, window: 1m }
-
-  # Traffic analytics
-  analytics:
-    enabled: true
-    log_file: ./agent-traffic.log
-    # db_path: ./analytics.db    # SQLite for dashboard charts
-    # endpoint: https://your-endpoint.com/events
-
-  # Security headers + CORS
-  security:
-    enabled: true
-    # cors_origins: ["*"]
-
-  # MCP tool server (auto-generated from discovery)
-  mcp:
-    enabled: false
-    # endpoint: /mcp
-
-  # Google A2A protocol server
-  a2a:
-    enabled: false
-    # endpoint: /a2a
-    # streaming: true
-
-  # AG-UI SSE streaming
-  ag_ui:
-    enabled: false
-    # endpoint: /ag-ui
-
-  # agents.txt access control
-  agents_txt:
-    enabled: true
-
-  # Agent onboarding — self-registration via webhook
-  agent_onboarding:
-    enabled: false
-    # provisioning_webhook: https://api.example.com/internal/provision-agent
-    # webhook_secret: ${WEBHOOK_SECRET}
-    # webhook_timeout: 10s
-    # require_identity: false
-    # allowed_providers: []       # Empty = allow all
-    # rate_limit:
-    #   max_registrations: 10     # Per IP per hour
-    #   window: 1h
-
-admin:
-  enabled: true
-  port: 9090               # Dashboard + Admin API port
-  # auth_token: your-secret
+    facilitator: https://x402.org/facilitator
+    pay_to: "0xYourWalletAddress"
+    billing_webhook: https://api.example.com/api/agent-payment
+    billing_webhook_secret: ${BILLING_WEBHOOK_SECRET}
+    billing_webhook_timeout: 10s
+    routes:
+      - path: /api/premium/*
+        price: "0.01"
+        currency: USDC
+        description: "Premium API access"
 ```
 
-### Environment Variable Overrides
-
-The config file is the source of truth. Env vars are only for bootstrap-level overrides — the things you need before or instead of a config file:
-
-| Variable | Config Path |
-|----------|-------------|
-| `LIGHTLAYER_CONFIG` | Config file path |
-| `LIGHTLAYER_PORT` | `gateway.listen.port` |
-| `LIGHTLAYER_HOST` | `gateway.listen.host` |
-| `LIGHTLAYER_ORIGIN_URL` | `gateway.origin.url` |
-| `LIGHTLAYER_ADMIN_PORT` | `admin.port` |
-
-Everything else (plugins, TLS, rate limits, payments, etc.) goes in `gateway.yaml`. For Docker, mount the config file.
-
----
-
-## Plugin Guide
-
-### Enabling/Disabling Plugins
-
-Every plugin can be toggled via the config file or the dashboard UI:
-
-```yaml
-plugins:
-  discovery:
-    enabled: true    # Toggle on/off
-```
-
-### Plugin Execution Order
-
-Plugins execute as middleware in a fixed order optimized for correctness:
-
-1. **Security** — CORS + security headers (runs first to protect all responses)
-2. **Discovery** — Intercepts `/.well-known/ai`, `/agents.txt`, `/llms.txt`
-3. **Agent Onboarding** — Handles `POST /agent/register`, returns 401 with registration info for unauthenticated requests
-4. **MCP** — Intercepts `/mcp` (JSON-RPC 2.0)
-5. **A2A** — Intercepts `/a2a` (JSON-RPC 2.0 task lifecycle)
-6. **AG-UI** — Intercepts `/ag-ui` (SSE streaming)
-7. **agents.txt** — Enforces per-agent path access rules
-8. **Rate Limits** — Enforces per-agent rate limits
-9. **Payments** — x402 payment negotiation
-10. **Analytics** — Logs request (async, non-blocking)
-11. **→ Reverse Proxy → Origin**
-
-### Writing Custom Plugins
-
-Plugins implement the `Plugin` interface:
-
-```go
-type Plugin interface {
-    Name() string
-    Init(cfg map[string]interface{}) error
-    Middleware() func(http.Handler) http.Handler
-    Close() error
-}
-```
-
-Register your plugin in an `init()` function:
-
-```go
-func init() {
-    plugins.Register("my_plugin", func() plugins.Plugin {
-        return &MyPlugin{}
-    })
-}
-```
+The billing webhook receives a POST with `{ agent_id, amount, currency, tx_hash, network, timestamp }` signed with HMAC-SHA256. The origin processes the payment in their own billing system and returns 200 OK.
 
 ---
 
@@ -315,7 +185,7 @@ Agent onboarding lets AI agents register for API credentials programmatically �
 
 The gateway never stores credentials — it's a stateless facilitator.
 
-### Configuration
+### Onboarding Configuration
 
 ```yaml
 plugins:
@@ -378,52 +248,141 @@ When an agent hits the API without credentials, the gateway returns a helpful 40
 
 ---
 
-## Agent Payments
+## Configuration
 
-The payments plugin bridges x402 crypto payments with the origin's own billing system. The API owner never touches crypto. The agent never touches Stripe. The gateway is the adapter.
+The gateway is configured via `gateway.yaml`. Generate a starter config with:
 
-### Full Agent Lifecycle
-
-```
-Discovery → Onboarding → Free Tier → Payment → Paid Tier
-    │            │            │           │          │
-    ▼            ▼            ▼           ▼          ▼
- Agent finds  Agent gets  Agent uses  Agent pays  Origin updates
- the API via  credentials  free quota  via x402    agent's tier
- /.well-known  via POST    until 429   (crypto)   via billing
-              /agent/      from                    webhook
-              register     origin
+```bash
+lightlayer-gateway init
 ```
 
-### How the Billing Bridge Works
+### Configuration Reference
 
-1. Agent uses free tier credentials, origin returns **429** (quota exceeded)
-2. Gateway intercepts the 429, returns **402** with x402 payment info
-3. Agent pays via x402 (crypto)
-4. Gateway verifies payment with x402 facilitator
-5. Gateway calls the origin's **billing webhook** with payment details
-6. Origin updates the agent's quota/tier in their own system (Stripe, DB, whatever)
-7. Gateway retries the original request
+```yaml
+gateway:
+  listen:
+    port: 8080              # Proxy listen port
+    host: 0.0.0.0           # Bind address
+    # tls:
+    #   cert: /path/to/cert.pem
+    #   key: /path/to/key.pem
 
-### Configuration
+  origin:
+    url: https://api.example.com  # Your API's URL
+    timeout: 30s                  # Request timeout
+    # retries: 2                  # Retry failed requests
+
+plugins:
+  # Agent discovery — serves machine-readable API metadata
+  discovery:
+    enabled: true
+    name: "My API"
+    description: "Description of your API"
+    version: "1.0.0"
+    capabilities:
+      - name: "widgets"
+        description: "CRUD operations for widgets"
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/widgets", "/api/widgets/*"]
+
+  # Agent onboarding — self-registration via webhook
+  agent_onboarding:
+    enabled: false
+    # provisioning_webhook: https://api.example.com/internal/provision-agent
+    # webhook_secret: ${WEBHOOK_SECRET}
+    # webhook_timeout: 10s
+    # require_identity: false
+    # allowed_providers: []       # Empty = allow all
+    # rate_limit:
+    #   max_registrations: 10     # Per IP per hour
+    #   window: 1h
+
+  # x402 micropayments — the bridge between crypto and your billing system
+  payments:
+    enabled: false
+    # facilitator: https://x402.org/facilitator
+    # pay_to: "0xYourWalletAddress"
+    # billing_webhook: https://api.example.com/api/agent-payment
+    # billing_webhook_secret: ${BILLING_WEBHOOK_SECRET}
+    # routes:
+    #   - path: /api/premium/*
+    #     price: "0.01"
+    #     currency: USDC
+    #     description: "Premium API access"
+
+  # Traffic analytics
+  analytics:
+    enabled: true
+    log_file: ./agent-traffic.log
+    # db_path: ./analytics.db    # SQLite for dashboard charts
+    # endpoint: https://your-endpoint.com/events
+
+admin:
+  enabled: true
+  port: 9090               # Dashboard + Admin API port
+  # auth_token: your-secret
+```
+
+### Environment Variable Overrides
+
+The config file is the source of truth. Env vars are only for bootstrap-level overrides — the things you need before or instead of a config file:
+
+| Variable | Config Path |
+|----------|-------------|
+| `LIGHTLAYER_CONFIG` | Config file path |
+| `LIGHTLAYER_PORT` | `gateway.listen.port` |
+| `LIGHTLAYER_HOST` | `gateway.listen.host` |
+| `LIGHTLAYER_ORIGIN_URL` | `gateway.origin.url` |
+| `LIGHTLAYER_ADMIN_PORT` | `admin.port` |
+
+Everything else (plugins, TLS, payments, etc.) goes in `gateway.yaml`. For Docker, mount the config file.
+
+---
+
+## Plugin Guide
+
+### Enabling/Disabling Plugins
+
+Every plugin can be toggled via the config file or the dashboard UI:
 
 ```yaml
 plugins:
-  payments:
-    enabled: true
-    facilitator: https://x402.org/facilitator
-    pay_to: "0xYourWalletAddress"
-    billing_webhook: https://api.example.com/api/agent-payment
-    billing_webhook_secret: ${BILLING_WEBHOOK_SECRET}
-    billing_webhook_timeout: 10s
-    routes:
-      - path: /api/premium/*
-        price: "0.01"
-        currency: USDC
-        description: "Premium API access"
+  discovery:
+    enabled: true    # Toggle on/off
 ```
 
-The billing webhook receives a POST with `{ agent_id, amount, currency, tx_hash, network, timestamp }` signed with HMAC-SHA256. The origin processes the payment in their own billing system and returns 200 OK.
+### Plugin Execution Order
+
+Plugins execute as middleware in a fixed order optimized for correctness:
+
+1. **Discovery** — Intercepts `/llms.txt`, `/llms-full.txt`, `/.well-known/agent.json`, `/agents.txt`
+2. **Agent Onboarding** — Handles `POST /agent/register`, returns 401 with registration info for unauthenticated requests
+3. **Payments** — x402 payment negotiation and billing webhook bridge
+4. **Analytics** — Logs request (async, non-blocking)
+5. **→ Reverse Proxy → Origin**
+
+### Writing Custom Plugins
+
+Plugins implement the `Plugin` interface:
+
+```go
+type Plugin interface {
+    Name() string
+    Init(cfg map[string]interface{}) error
+    Middleware() func(http.Handler) http.Handler
+    Close() error
+}
+```
+
+Register your plugin in an `init()` function:
+
+```go
+func init() {
+    plugins.Register("my_plugin", func() plugins.Plugin {
+        return &MyPlugin{}
+    })
+}
+```
 
 ---
 
@@ -459,27 +418,27 @@ lightlayer-gateway score https://api.example.com
 ```
 
 ```
-🤖 Agent-Readiness Score: 34/100 (D)
+Agent-Readiness Score: 34/100 (D)
    https://api.example.com — 1250ms
 
-  ❌ Agent Discovery Endpoints (0/10)
+  [FAIL] Agent Discovery Endpoints (0/10)
      No agent discovery endpoints found
 
-  ❌ llms.txt (0/10)
+  [FAIL] llms.txt (0/10)
      No /llms.txt found
 
-  ✅ Content-Type Headers (10/10)
+  [PASS] Content-Type Headers (10/10)
      Content-Type header present with charset
 
-  ⚠️ Rate Limit Headers (4/10)
+  [WARN] Rate Limit Headers (4/10)
      Some rate limit headers present
 
-🔧 Quick wins to improve your score:
-   • Serve /.well-known/ai and /.well-known/agent.json
-   • Add /llms.txt with structured markdown
-   • Include X-RateLimit-Remaining and Reset headers
+Quick wins to improve your score:
+   - Serve /.well-known/agent.json and /agents.txt
+   - Add /llms.txt with structured markdown
+   - Include X-RateLimit-Remaining and Reset headers
 
-💡 With LightLayer Gateway, your score would be: 89/100 (B) (+55)
+With LightLayer Gateway, your score would be: 89/100 (B) (+55)
 ```
 
 Use `--json` for CI integration or `--verbose` for detailed suggestions.
@@ -542,10 +501,10 @@ Benchmarks run on a single-core VM (DO-Premium-Intel). Proxy latency target: <2m
 
 | Benchmark | Latency | Allocs/op |
 |-----------|---------|-----------|
-| Bare proxy (no plugins) | ~120 µs | 105 |
-| All plugins enabled | ~19 µs | 40 |
-| 1000 concurrent requests | ~25 µs/req | 55 |
-| **Proxy latency overhead** | **~22 µs (0.022 ms)** | 51 |
+| Bare proxy (no plugins) | ~120 us | 105 |
+| All plugins enabled | ~19 us | 40 |
+| 1000 concurrent requests | ~25 us/req | 55 |
+| **Proxy latency overhead** | **~22 us (0.022 ms)** | 51 |
 
 Binary size: **18 MB** (with embedded dashboard UI).
 
