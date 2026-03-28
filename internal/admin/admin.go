@@ -5,8 +5,10 @@ package admin
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -28,6 +30,7 @@ type Server struct {
 	startTime time.Time
 	version   string
 	logHub    *LogHub
+	uiAssets  embed.FS
 
 	// ReloadFunc is called when config reload is triggered via API.
 	ReloadFunc func(path string) error
@@ -49,10 +52,18 @@ func NewServer(cfg *config.Config, pipeline *plugins.Pipeline, st store.Store, v
 	return s
 }
 
+// SetUIAssets sets the embedded filesystem containing the built dashboard UI.
+func (s *Server) SetUIAssets(assets embed.FS) {
+	s.uiAssets = assets
+}
+
 // Start begins listening on the configured admin port.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
+
+	// Serve embedded UI assets at / with SPA fallback.
+	s.registerUI(mux)
 
 	addr := fmt.Sprintf(":%d", s.cfg.Admin.Port)
 	s.httpSrv = &http.Server{
@@ -68,6 +79,48 @@ func (s *Server) Start() error {
 		}
 	}()
 	return nil
+}
+
+// registerUI serves the embedded dashboard UI with SPA fallback to index.html.
+func (s *Server) registerUI(mux *http.ServeMux) {
+	// Try to open the dist directory from the embedded FS.
+	distFS, err := fs.Sub(s.uiAssets, "ui/dist")
+	if err != nil {
+		slog.Debug("no embedded UI assets, skipping dashboard serving")
+		return
+	}
+
+	// Check if there's actually an index.html.
+	if _, err := fs.Stat(distFS, "index.html"); err != nil {
+		slog.Debug("no index.html in embedded UI assets, skipping dashboard serving")
+		return
+	}
+
+	fileServer := http.FileServer(http.FS(distFS))
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Don't serve UI for API routes.
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Try to serve the file directly.
+		path := r.URL.Path
+		if path == "/" {
+			path = "/index.html"
+		}
+
+		// Check if the file exists in the embedded FS.
+		if _, err := fs.Stat(distFS, strings.TrimPrefix(path, "/")); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// SPA fallback: serve index.html for all other paths.
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // Shutdown gracefully stops the admin server.

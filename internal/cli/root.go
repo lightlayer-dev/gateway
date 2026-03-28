@@ -1,11 +1,17 @@
 package cli
 
 import (
+	"embed"
+
 	"github.com/spf13/cobra"
 )
 
 // Version is set at build time via -ldflags.
 var Version = "dev"
+
+// UIAssets holds the embedded dashboard UI filesystem.
+// Set by the caller (main.go) before Execute().
+var UIAssets embed.FS
 
 var rootCmd = &cobra.Command{
 	Use:   "lightlayer-gateway",
