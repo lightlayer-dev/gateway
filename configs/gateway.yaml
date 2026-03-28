@@ -1,0 +1,64 @@
+# LightLayer Gateway Configuration
+# Docs: https://github.com/lightlayer-dev/gateway
+
+gateway:
+  listen:
+    port: 8080
+    host: 0.0.0.0
+    # tls:
+    #   cert: /path/to/cert.pem
+    #   key: /path/to/key.pem
+
+  origin:
+    url: https://api.example.com
+    timeout: 30s
+    # retries: 2
+
+plugins:
+  discovery:
+    enabled: true
+    name: "Example API"
+    description: "A REST API for managing widgets"
+    version: "1.0.0"
+    capabilities:
+      - name: "widgets"
+        description: "CRUD operations for widgets"
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/widgets", "/api/widgets/*"]
+
+  identity:
+    enabled: true
+    mode: enforce  # log | warn | enforce
+    # trusted_issuers:
+    #   - https://auth.anthropic.com
+
+  payments:
+    enabled: false
+    # facilitator: https://x402.org/facilitator
+    # routes:
+    #   - path: /api/premium/*
+    #     price: "0.01"
+    #     currency: USDC
+
+  rate_limits:
+    enabled: true
+    default:
+      requests: 100
+      window: 1m
+    # per_agent:
+    #   claude: { requests: 500, window: 1m }
+
+  analytics:
+    enabled: true
+    log_file: ./agent-traffic.log
+    # endpoint: https://dashboard.lightlayer.dev/api/events
+    # api_key: your-key
+
+  security:
+    enabled: true
+    # cors_origins: ["*"]
+
+admin:
+  enabled: true
+  port: 9090
+  # auth_token: your-secret-token
