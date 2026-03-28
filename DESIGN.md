@@ -2,7 +2,14 @@
 
 ## Vision
 
-A standalone reverse proxy with a web dashboard that sits between AI agents and APIs. Zero code changes for the API owner. Configure via a Cloudflare-style web UI or YAML, point agent traffic through us, and we handle the full agent lifecycle — discovery, onboarding, payments bridging, rate limiting, and analytics — automatically.
+A standalone reverse proxy with a web dashboard that makes any API agent-ready. Zero code changes for the API owner. Configure via a Cloudflare-style web UI or YAML, point agent traffic through us, and we handle the four pillars of the agent lifecycle automatically:
+
+**Find the API -> Register -> Pay -> See what's happening**
+
+1. **Discovery** — agents find and understand your API via standard machine-readable endpoints
+2. **Onboarding** — agents self-register and get credentials programmatically
+3. **Payments** — x402 micropayments with a billing bridge to the origin's own system
+4. **Analytics** — agent traffic telemetry, logging, and dashboard visualizations
 
 Think Cloudflare, but specifically for AI agent traffic.
 
@@ -16,20 +23,19 @@ Think Cloudflare, but specifically for AI agent traffic.
 
 The gateway is the next evolution of work we already shipped in **agent-layer-ts** and **agent-layer-python** — middleware libraries that add agent-friendliness to existing web frameworks. Everything below was built, tested, and battle-tested. The gateway takes these learnings and moves them from "add to your code" to "put in front of your code."
 
-### Features proven in agent-layer (port ALL of these to the gateway):
+### Features proven in agent-layer (ported to the gateway):
 
 1. **Structured Error Envelopes** — consistent JSON error format for agents: `{type, code, message, status, is_retriable, retry_after, param, docs_url}`. Agents need machine-readable errors, not HTML 500 pages.
 
 2. **Agent Detection** — User-Agent pattern matching for 18+ known AI agents: ChatGPT, GPTBot, ClaudeBot, Anthropic, PerplexityBot, Cohere, Bytespider, Amazonbot, Applebot, Meta-ExternalAgent, etc. This is the foundation — the gateway needs to know it's talking to an agent.
 
 3. **Unified Discovery** — single config generates ALL discovery formats simultaneously:
-   - `/.well-known/ai` (AI manifest)
    - `/.well-known/agent.json` (Google A2A Agent Card — v1.0 spec)
-   - `/agents.txt` (robots.txt-style permissions for AI agents — per-agent rules, rate limits, preferred interface, auth requirements)
+   - `/agents.txt` (served as a static file for AI agents — NOT enforced as access control)
    - `/llms.txt` + `/llms-full.txt` (LLM-oriented documentation)
-   This is the killer feature. One YAML config → five machine-readable discovery endpoints.
+   This is the killer feature. One YAML config, four machine-readable discovery endpoints.
 
-   **NOTE:** agent-layer only implements Agent Card generation (discovery). The gateway goes further — see "Full A2A Protocol Support" below.
+   **NOTE:** We do NOT serve `/.well-known/ai` — that was our own format nobody uses. Removed.
 
 4. **x402 Payments + Billing Bridge** — HTTP-native micropayments per the x402.org spec, with a billing webhook bridge to the origin's billing system:
    - Server declares pricing via PaymentRequirements
@@ -38,33 +44,16 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
    - Facilitator verification + settlement
    - Per-route pricing config
    - **Billing webhook bridge:** on successful payment, gateway calls origin's billing endpoint with `{ agent_id, amount, currency, tx_hash, network, timestamp }` so the origin can update the agent's quota/tier in their own system (Stripe, DB, whatever)
-   - **429→402 interception:** when origin returns 429 (quota exceeded), gateway converts to 402 with x402 payment info
+   - **429->402 interception:** when origin returns 429 (quota exceeded), gateway converts to 402 with x402 payment info
    - The API owner never touches crypto. The agent never touches Stripe. Gateway is the adapter.
    - **Future:** fiat x402 where agent owners pre-fund via credit card and x402 deducts from a balance instead of on-chain payment
 
-6. **MCP Server** — auto-generate Model Context Protocol tool definitions from API routes:
-   - Route metadata → MCP tool definitions (name, description, JSON Schema input)
-   - JSON-RPC 2.0 server handling initialize, tools/list, tools/call
-   - Enables AI agents to discover and call API endpoints via MCP
-
-8. **AG-UI Protocol** — Server-Sent Events streaming for agent UIs (CopilotKit, Google ADK):
-   - Lifecycle events (RUN_STARTED, RUN_FINISHED, RUN_ERROR)
-   - Text streaming (TEXT_MESSAGE_START/CONTENT/END)
-   - Tool call streaming (TOOL_CALL_START/ARGS/END/RESULT)
-   - State management (STATE_SNAPSHOT, STATE_DELTA)
-
-7. **Analytics** — agent traffic telemetry with batch flushing:
+5. **Analytics** — agent traffic telemetry with batch flushing:
     - Per-request: agent name, method, path, status, duration, content type, response size
     - Batch flush to endpoint or local callback
     - Agent detection integrated
 
-11. **Security Headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, CSP, Permissions-Policy
-
-12. **robots.txt** — AI-agent-aware robots.txt generation with explicit rules for known AI agents
-
-13. **agents.txt** — per-agent access control with rate limits, preferred interface (REST/MCP/GraphQL/A2A), and auth requirements
-
-14. **Agent Onboarding** — agent self-registration via webhook-based credential provisioning:
+6. **Agent Onboarding** — agent self-registration via webhook-based credential provisioning:
     - `POST /agent/register` endpoint for programmatic agent sign-up
     - Webhook to API owner's provisioning system (HMAC-SHA256 signed)
     - Standardized credential format: api_key, oauth2_client_credentials, bearer
@@ -73,59 +62,27 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
     - Optional identity token verification
     - Provider allow-listing
     - Gateway is stateless — never stores credentials
-15. **x402 Client Helpers** — client-side payment handling (for agents consuming paid APIs through the gateway):
-    - Detect 402 responses, extract PaymentRequired from header
-    - Auto-retry with payment via WalletSigner interface
-    - Wrap fetch to transparently handle paid APIs
 
-16. **Content Negotiation** — smart error responses based on client type:
+7. **Content Negotiation** — smart error responses based on client type:
     - Detect if client prefers JSON (agents, curl, bots) vs HTML (browsers)
     - Agents get structured JSON error envelopes
     - Browsers get rendered HTML error pages
     - Based on Accept header + User-Agent pattern matching
 
-### Beyond agent-layer — New for the Gateway:
-
-18. **Full Google A2A Protocol Support (v1.0)** — not just Agent Cards, but the complete protocol:
-    - **Agent Card** at `/.well-known/agent.json` (already in agent-layer)
-    - **JSON-RPC 2.0 server** for A2A operations:
-      - `message/send` — send a message to the origin API, get back a Task or Message
-      - `message/stream` — streaming variant via SSE (TaskStatusUpdateEvent, TaskArtifactUpdateEvent)
-      - `tasks/get` — retrieve task state, status, artifacts, history
-      - `tasks/list` — list tasks with filtering (contextId, status, pagination)
-      - `tasks/cancel` — cancel a running task
-    - **Task lifecycle** — submitted → working → completed/failed/canceled/rejected
-    - **Parts** — text, file references, structured JSON data in messages/artifacts
-    - **Artifacts** — output files/data generated by the origin API
-    - **Streaming** — SSE for real-time task updates and artifact chunks
-    - **Push notifications** — webhook callbacks for long-running async tasks
-    - **Context grouping** — group related tasks/messages by contextId
-    - **Extensions** — mechanism for custom functionality beyond core spec
-    - The gateway acts as an A2A server, translating between A2A protocol and the origin REST API. This means ANY REST API behind the gateway automatically becomes A2A-compatible.
-
-19. **AG-UI Protocol Support** — Server-Sent Events streaming for agent UIs:
-    - Port from agent-layer ag-ui.ts (already built)
-    - SSE streaming endpoint for CopilotKit, Google ADK, and other AG-UI frontends
-    - Event types: RUN_STARTED/FINISHED/ERROR, TEXT_MESSAGE_START/CONTENT/END, TOOL_CALL_START/ARGS/END/RESULT, STATE_SNAPSHOT/DELTA
-    - High-level emitter API for easy streaming from origin responses
-    - Standard AG-UI headers (Content-Type: text/event-stream, no-cache, no nginx buffering)
-    - The gateway can translate origin API responses into AG-UI SSE streams
-
-20. **Agent-Readiness Scoring** (from @agent-layer/score) — Lighthouse-style CLI scanner:
-    - Score any API on agent-friendliness (0-100)
-    - Checks: discovery endpoints, error format, rate limit headers, auth docs, cost transparency, structured responses
-    - Built into gateway CLI: `lightlayer-gateway score https://api.example.com`
-    - Shows what the gateway adds to the score
+8. **x402 Client Helpers** — client-side payment handling (for agents consuming paid APIs through the gateway):
+    - Detect 402 responses, extract PaymentRequired from header
+    - Auto-retry with payment via WalletSigner interface
+    - Wrap fetch to transparently handle paid APIs
 
 ### Key Architecture Decisions from agent-layer:
-- **Plugin ordering matters** — security → discovery → onboarding → rate limits → payments → analytics → proxy (proven in both TS and Python)
+- **Plugin ordering matters** — discovery -> onboarding -> payments -> analytics -> proxy (proven in both TS and Python)
 - **Agent detection is foundational** — every other plugin depends on knowing if it's an agent and which one
-- **Unified discovery config is essential** — maintaining 5 separate discovery configs is a nightmare; one source of truth
+- **Unified discovery config is essential** — maintaining separate discovery configs is a nightmare; one source of truth
 - **x402 alone was insufficient** — the raw x402 protocol handles crypto payments but doesn't bridge to the origin's billing system. The billing webhook bridge solves this: the gateway calls the origin's billing endpoint with payment details so the origin can update quotas/tiers in their own system (Stripe, DB, etc.). Without this bridge, the API owner would need to handle crypto directly.
 - **x402 is route-scoped** — different prices for different endpoints
-- **agents.txt > robots.txt for agents** — robots.txt is for crawlers, agents.txt is for agents (different rules, different semantics)
+- **agents.txt is served, not enforced** — agents.txt is a discovery file that tells agents about your API's preferences, not an access control mechanism
 - **Content negotiation is critical** — agents need JSON, humans need HTML; the gateway must detect and adapt
-- **MCP auto-generation from discovery config** — define capabilities once, get MCP tools for free
+
 ## Why Go
 
 - **Purpose-built for proxies** — Caddy, Traefik, Kong are all Go. net/http is best-in-class.
@@ -138,20 +95,18 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
 
 ```
 ┌─────────────┐     ┌──────────────────────────┐     ┌──────────────┐
-│   AI Agent   │────▶│   LightLayer Gateway     │────▶│  Origin API  │
+│   AI Agent   │────>│   LightLayer Gateway     │────>│  Origin API  │
 │  (Claude,    │     │                          │     │  (any lang,  │
-│   GPT, etc.) │◀────│  ┌─────────┐ ┌────────┐ │◀────│   any stack) │
-└─────────────┘     │  │Onboard  │ │Payment │ │     └──────────────┘
-                    │  │  +Auth  │ │ Bridge │ │
+│   GPT, etc.) │<────│  ┌─────────┐ ┌────────┐ │<────│   any stack) │
+└─────────────┘     │  │Discovery│ │Onboard │ │     └──────────────┘
+                    │  │ Serving │ │  +Auth │ │
                     │  └─────────┘ └────────┘ │
                     │  ┌─────────┐ ┌────────┐ │
-                    │  │Discovery│ │Analytics│ │
-                    │  │ Serving │ │Logging │ │
+                    │  │Payment │ │Analytics│ │
+                    │  │ Bridge │ │Logging │ │
                     │  └─────────┘ └────────┘ │
-                    │  ┌─────────┐ ┌────────┐ │
-                    │  │  Rate   │ │Security│ │
-                    │  │ Limits  │ │Headers │ │
-                    │  └─────────┘ └────────┘ │
+                    │                          │
+                    │  Dashboard UI (port 9090) │
                     └──────────────────────────┘
 ```
 
@@ -189,13 +144,12 @@ The dashboard is the primary way most users interact with the gateway. Inspired 
 **Pages:**
 1. **Overview** — proxy status, uptime, request count, latency, origin health (like Cloudflare home)
 2. **Analytics** — agent traffic charts: requests over time, top agents, top paths, error rates, response times
-3. **Plugins** — toggle plugins on/off, configure each one (discovery, onboarding, rate limits, payments, security)
-4. **Discovery** — edit API name/description/capabilities, preview generated endpoints
-5. **Rate Limits** — visual rule builder: default limits, per-agent overrides, see current usage
-6. **Onboarding** — configure agent self-registration, manage providers
-7. **Payments** — configure paid routes, prices, see payment history
-8. **Settings** — origin URL, listen port, TLS, admin settings, export/import YAML config
-9. **Logs** — real-time request log viewer with filtering (by agent, path, status, etc.)
+3. **Discovery** — edit API name/description/capabilities, preview generated endpoints (/llms.txt, /llms-full.txt, /.well-known/agent.json, /agents.txt)
+4. **Onboarding** — configure agent self-registration, manage providers, view registration activity
+5. **Payments** — configure paid routes, prices, see payment history
+6. **Plugins** — toggle plugins on/off, configure each one (discovery, onboarding, payments, analytics)
+7. **Settings** — origin URL, listen port, TLS, admin settings, export/import YAML config
+8. **Logs** — real-time request log viewer with filtering (by agent, path, status, etc.)
 
 **UI Principles:**
 - Clean, professional, minimal — no clutter (Cloudflare-inspired)
@@ -236,61 +190,7 @@ plugins:
         description: "CRUD operations for widgets"
         methods: ["GET", "POST", "PUT", "DELETE"]
         paths: ["/api/widgets", "/api/widgets/*"]
-    # Serves: /.well-known/ai, /.well-known/agent.json, /agents.txt, /llms.txt
-
-  payments:
-    enabled: false
-    # facilitator: https://x402.org/facilitator
-    # routes:
-    #   - path: /api/premium/*
-    #     price: "0.01"
-    #     currency: USDC
-
-  rate_limits:
-    enabled: true
-    default:
-      requests: 100
-      window: 1m
-    # per_agent:
-    #   claude: { requests: 500, window: 1m }
-
-  analytics:
-    enabled: true
-    log_file: ./agent-traffic.log
-    # endpoint: https://dashboard.lightlayer.dev/api/events
-    # api_key: your-key
-
-  security:
-    enabled: true
-    # cors_origins: ["*"]
-    # hsts_max_age: 31536000
-    # frame_options: DENY
-    # content_type_options: nosniff
-    # referrer_policy: strict-origin-when-cross-origin
-
-  mcp:
-    enabled: false
-    # name: "My API"
-    # version: "1.0.0"
-    # instructions: "REST API for widgets"
-    # Auto-generates MCP tools from discovery capabilities
-
-  a2a:
-    enabled: false
-    # endpoint: /a2a  # JSON-RPC 2.0 endpoint for A2A operations
-    # streaming: true  # Enable SSE streaming for message/stream
-    # push_notifications: false  # Enable webhook push notifications
-    # push_url: ""  # Default push notification URL
-    # task_ttl: 24h  # How long to keep completed tasks
-    # max_tasks: 10000  # Maximum concurrent tasks in memory
-    # Maps discovery capabilities → A2A skills automatically
-    # Translates origin REST API → A2A task lifecycle
-
-  ag_ui:
-    enabled: false
-    # endpoint: /ag-ui  # SSE streaming endpoint for AG-UI
-    # Translates origin responses into AG-UI event streams
-    # Compatible with CopilotKit, Google ADK
+    # Serves: /.well-known/agent.json, /agents.txt, /llms.txt, /llms-full.txt
 
   agent_onboarding:
     enabled: false
@@ -303,17 +203,23 @@ plugins:
     #   max_registrations: 10
     #   window: 1h
 
-  agents_txt:
+  payments:
+    enabled: false
+    # facilitator: https://x402.org/facilitator
+    # pay_to: "0xYourWalletAddress"
+    # billing_webhook: https://api.example.com/api/agent-payment
+    # billing_webhook_secret: ${BILLING_WEBHOOK_SECRET}
+    # routes:
+    #   - path: /api/premium/*
+    #     price: "0.01"
+    #     currency: USDC
+
+  analytics:
     enabled: true
-    # rules:
-    #   - agent: "*"
-    #     allow: ["/api/*"]
-    #     deny: ["/internal/*"]
-    #     rate_limit: { max: 100, window_seconds: 60 }
-    #     preferred_interface: rest  # rest | mcp | graphql | a2a
-    #   - agent: "ClaudeBot"
-    #     allow: ["/api/*", "/docs/*"]
-    #     rate_limit: { max: 500, window_seconds: 60 }
+    log_file: ./agent-traffic.log
+    # db_path: ./analytics.db
+    # endpoint: https://dashboard.lightlayer.dev/api/events
+    # api_key: your-key
 
 admin:
   enabled: true
@@ -360,22 +266,17 @@ lightlayer-gateway score https://api.example.com --verbose
 ### Startup Output
 
 ```
- ⚡ LightLayer Gateway v0.1.0
+ LightLayer Gateway v0.1.0
 
   Listening:  http://localhost:8080
   Origin:     https://api.example.com
   Admin:      http://localhost:9090
 
   Plugins:
-    ✓ discovery        serving /.well-known/ai, /agents.txt, /llms.txt
-    ✓ agent_onboarding agent self-registration via webhook
-    ✓ rate_limits      100 req/min default
-    ✓ analytics        logging to ./agent-traffic.log
-    ✓ security         CORS + security headers + robots.txt
-    ✓ mcp              MCP tool server (auto-generated from routes)
-    ✓ a2a              A2A protocol server (task lifecycle, streaming)
-    ✓ ag_ui            AG-UI SSE streaming for agent frontends
-    ✓ agents_txt       per-agent access control
+    discovery        serving /.well-known/agent.json, /agents.txt, /llms.txt, /llms-full.txt
+    agent_onboarding agent self-registration via webhook
+    payments         x402 payment bridge (2 paid routes)
+    analytics        logging to ./agent-traffic.log
 
   Ready to proxy agent traffic.
 ```
@@ -414,15 +315,11 @@ type AgentInfo struct {
 Plugins wrap as standard Go middleware, composable via `alice` or manual chaining:
 
 ```go
-handler := security.Middleware()(
-    discovery.Middleware()(
-        onboarding.Middleware()(
-            rateLimit.Middleware()(
-                payments.Middleware()(
-                    analytics.Middleware()(
-                        reverseProxy,
-                    ),
-                ),
+handler := discovery.Middleware()(
+    onboarding.Middleware()(
+        payments.Middleware()(
+            analytics.Middleware()(
+                reverseProxy,
             ),
         ),
     ),
@@ -431,17 +328,11 @@ handler := security.Middleware()(
 
 ### Plugin Execution Order
 
-1. **Security** — CORS, security headers, HSTS, CSP
-2. **Discovery** — intercept /.well-known/ai, /.well-known/agent.json, /llms.txt, /agents.txt
-3. **Agent Onboarding** — handle POST /agent/register, return 401 with registration info for unauthenticated requests
-4. **MCP** — intercept /mcp endpoint (JSON-RPC 2.0 tools)
-5. **A2A** — intercept /a2a endpoint (JSON-RPC 2.0 task lifecycle)
-6. **AG-UI** — intercept /ag-ui endpoint (SSE streaming)
-7. **Agents.txt** — enforce per-agent path access rules
-8. **Rate Limits** — per-agent rate limiting (sliding window)
-9. **Payments** — x402 payment negotiation
-10. **Analytics** — log request (non-blocking, async flush)
-11. **→ Reverse Proxy → Origin** (with structured error wrapping + content negotiation on failures)
+1. **Discovery** — intercept /.well-known/agent.json, /llms.txt, /llms-full.txt, /agents.txt
+2. **Agent Onboarding** — handle POST /agent/register, return 401 with registration info for unauthenticated requests
+3. **Payments** — x402 payment negotiation, 429->402 interception, billing webhook bridge
+4. **Analytics** — log request (non-blocking, async flush)
+5. **-> Reverse Proxy -> Origin** (with structured error wrapping + content negotiation on failures)
 
 ## File Structure
 
@@ -472,30 +363,16 @@ gateway/
 │   │   ├── plugin.go            # Plugin interface
 │   │   ├── pipeline.go          # Plugin pipeline builder
 │   │   ├── discovery/
-│   │   │   └── discovery.go     # Discovery endpoint serving
-│   │   ├── ratelimit/
-│   │   │   └── ratelimit.go     # Per-agent rate limiting
-│   │   ├── payments/
-│   │   │   └── payments.go      # x402 payment handling
-│   │   ├── analytics/
-│   │   │   └── analytics.go     # Traffic analytics
-│   │   ├── security/
-│   │   │   └── security.go      # CORS, security headers, HSTS, CSP
-│   │   ├── mcp/
-│   │   │   └── mcp.go           # MCP JSON-RPC server (auto-generated tools)
-│   │   ├── agentstxt/
-│   │   │   └── agentstxt.go     # agents.txt generation + enforcement
+│   │   │   └── discovery.go     # Discovery endpoint serving (agent.json, llms.txt, agents.txt)
 │   │   ├── onboarding/
 │   │   │   ├── onboarding.go    # Agent self-registration + 401 handler
 │   │   │   ├── webhook.go       # Webhook HTTP client, HMAC signing
 │   │   │   ├── types.go         # Request/response types
 │   │   │   └── onboarding_test.go
-│   │   ├── a2a/
-│   │   │   ├── a2a.go           # A2A JSON-RPC server (full protocol v1.0)
-│   │   │   ├── tasks.go         # Task lifecycle management
-│   │   │   └── streaming.go     # SSE streaming + push notifications
-│   │   └── agui/
-│   │       └── agui.go          # AG-UI SSE streaming (CopilotKit/ADK)
+│   │   ├── payments/
+│   │   │   └── payments.go      # x402 payment handling + billing bridge
+│   │   └── analytics/
+│   │       └── analytics.go     # Traffic analytics (JSONL + SQLite)
 │   ├── detection/
 │   │   └── agent.go             # Agent User-Agent detection
 │   ├── admin/
@@ -520,11 +397,10 @@ gateway/
 │   │   ├── pages/
 │   │   │   ├── Overview.tsx     # Status, uptime, request count
 │   │   │   ├── Analytics.tsx    # Traffic charts, top agents
-│   │   │   ├── Plugins.tsx      # Toggle/configure plugins
 │   │   │   ├── Discovery.tsx    # Edit API description, preview endpoints
-│   │   │   ├── RateLimits.tsx   # Rule builder, usage display
 │   │   │   ├── Onboarding.tsx   # Agent self-registration config
 │   │   │   ├── Payments.tsx     # Paid routes, payment history
+│   │   │   ├── Plugins.tsx      # Toggle/configure plugins
 │   │   │   ├── Settings.tsx     # Origin, port, TLS, YAML export/import
 │   │   │   └── Logs.tsx         # Real-time request log viewer
 │   │   ├── components/
@@ -543,7 +419,7 @@ gateway/
 ├── docker-compose.yml           # Full self-hosted setup
 ├── go.mod
 ├── go.sum
-├── Dockerfile                   # Multi-stage: build Go + build UI → single image
+├── Dockerfile                   # Multi-stage: build Go + build UI -> single image
 ├── Makefile
 ├── .github/
 │   └── workflows/
@@ -592,19 +468,13 @@ No external databases, no Redis, no message queues. One container, one volume. S
 
 ### Phase 2: Discovery & Onboarding Plugins (Cycles 6-10)
 - Plugin interface + pipeline builder
-- Discovery plugin (unified: /.well-known/ai, /.well-known/agent.json, /llms.txt — from agent-layer unified-discovery)
+- Discovery plugin (unified: /.well-known/agent.json, /llms.txt, /llms-full.txt, /agents.txt — from agent-layer unified-discovery)
 - Agent detection (18+ known agents — port from agent-layer analytics.ts patterns)
 - Agent onboarding plugin (self-registration via webhook, credential provisioning)
-- Rate limiting plugin (sliding window, per-agent — from agent-layer rate-limit.ts)
-- Security plugin (CORS, HSTS, CSP, all security headers — from agent-layer security-headers.ts)
 - Structured error envelopes on all gateway errors (from agent-layer errors.ts)
 
-### Phase 3: Payments, MCP & Protocols (Cycles 11-15)
+### Phase 3: Payments & Analytics (Cycles 11-15)
 - x402 payment plugin (route-scoped pricing, facilitator verify/settle — from agent-layer x402.ts)
-- agents.txt plugin (per-agent access rules, rate limits, preferred interface — from agent-layer agents-txt.ts)
-- MCP plugin (auto-generate tools from discovery config, JSON-RPC server — from agent-layer mcp.ts)
-- **Full A2A protocol server** (JSON-RPC 2.0: message/send, message/stream, tasks/get, tasks/list, tasks/cancel — translates origin REST → A2A task lifecycle)
-- AG-UI plugin (SSE streaming for CopilotKit/ADK — from agent-layer ag-ui.ts)
 - Analytics plugin (JSONL logging, async flush, SQLite storage — from agent-layer analytics.ts)
 - Content negotiation (JSON for agents, HTML for browsers — from agent-layer error-handler.ts)
 - Admin REST API (health, metrics, agents, config CRUD)
@@ -613,7 +483,7 @@ No external databases, no Redis, no message queues. One container, one volume. S
 
 ### Phase 4: Dashboard UI (Cycles 16-18)
 - React + Vite + Tailwind + shadcn/ui scaffolding
-- Dashboard pages: Overview, Analytics, Plugins, Settings, Logs
+- Dashboard pages: Overview, Analytics, Discovery, Onboarding, Payments, Plugins, Settings, Logs
 - Admin API integration, WebSocket for live logs
 - Embed built UI in Go binary via `embed`
 
@@ -624,8 +494,8 @@ No external databases, no Redis, no message queues. One container, one volume. S
 
 ## Success Metrics
 
-- `docker compose up` → working gateway + dashboard in < 30 seconds
-- `lightlayer-gateway init && lightlayer-gateway start` → working gateway in < 5 seconds
+- `docker compose up` -> working gateway + dashboard in < 30 seconds
+- `lightlayer-gateway init && lightlayer-gateway start` -> working gateway in < 5 seconds
 - < 2ms latency overhead per request
 - Single binary (with embedded UI) under 25MB
 - Docker image under 30MB
@@ -639,24 +509,20 @@ No external databases, no Redis, no message queues. One container, one volume. S
 
 ### What Was Built
 
-All 20 features from the design doc are implemented and tested:
+All four pillar plugins are implemented and tested:
 
-1. **Structured error envelopes** — `internal/plugins/errors.go` (AgentErrorEnvelope)
-2. **Agent detection** — `internal/detection/agent.go` (18+ known agents)
-3. **Unified discovery** — `internal/plugins/discovery/` (/.well-known/ai, /.well-known/agent.json, /llms.txt, /agents.txt)
-4. **x402 payments** — `internal/plugins/payments/` (route-scoped pricing, facilitator verify)
-5. **MCP server** — `internal/plugins/mcp/` (auto-generated tools from discovery config, JSON-RPC 2.0)
-6. **AG-UI protocol** — `internal/plugins/agui/` (SSE streaming for CopilotKit/ADK)
-7. **Analytics** — `internal/plugins/analytics/` (JSONL logging, async flush, SQLite storage)
-11. **Security headers** — `internal/plugins/security/` (CORS, HSTS, CSP, robots.txt)
-12. **robots.txt** — served by security plugin
-13. **agents.txt** — `internal/plugins/agentstxt/` (per-agent access control)
-14. **x402 client helpers** — payment handling in payments plugin
-16. **Content negotiation** — `internal/plugins/contentneg.go` (JSON for agents, HTML for browsers)
-17. **Full A2A protocol** — `internal/plugins/a2a/` (JSON-RPC 2.0, task lifecycle, SSE streaming)
-18. **AG-UI protocol** — merged with #8 above
-19. **Agent-readiness scoring** — `internal/score/` (scanner, checks, reporter) + CLI command
-20. **Dashboard UI** — `ui/` (React + TypeScript + Vite + Tailwind + shadcn/ui, embedded in binary)
+1. **Discovery** — `internal/plugins/discovery/` (/.well-known/agent.json, /llms.txt, /llms-full.txt, /agents.txt)
+2. **Agent Onboarding** — `internal/plugins/onboarding/` (POST /agent/register, webhook provisioning, 401 handler)
+3. **Payments** — `internal/plugins/payments/` (x402 route-scoped pricing, facilitator verify, billing webhook bridge)
+4. **Analytics** — `internal/plugins/analytics/` (JSONL logging, async flush, SQLite storage)
+
+Supporting infrastructure:
+
+- **Structured error envelopes** — `internal/plugins/errors.go` (AgentErrorEnvelope)
+- **Agent detection** — `internal/detection/agent.go` (18+ known agents)
+- **Content negotiation** — `internal/plugins/contentneg.go` (JSON for agents, HTML for browsers)
+- **Agent-readiness scoring** — `internal/score/` (scanner, checks, reporter) + CLI command
+- **Dashboard UI** — `ui/` (React + TypeScript + Vite + Tailwind + shadcn/ui, embedded in binary)
 
 ### Architecture Decisions That Changed from Plan
 
@@ -666,15 +532,16 @@ All 20 features from the design doc are implemented and tested:
 - **Config env var overrides kept minimal:** Only 5 bootstrap-level env vars (port, host, origin URL, config path, admin port). Everything else goes in gateway.yaml. This keeps the mental model simple.
 - **Single Go binary with embedded UI:** `ui/dist` is embedded via Go's `embed` package. No separate UI server needed.
 - **Pure-Go SQLite (modernc.org/sqlite):** No CGO dependency. Simplifies cross-compilation and Docker images.
+- **Four focused plugins instead of ten:** The product was refocused from a broad feature set to four tightly scoped pillars. Discovery serves files (including agents.txt and A2A Agent Card) but does not enforce access control. agents.txt is a discovery file, not a middleware. This reduces surface area and keeps the codebase maintainable.
 
 ### Performance Results (Benchmark — Cycle 20)
 
 | Benchmark | Result | Allocs |
 |-----------|--------|--------|
-| Bare proxy (no plugins) | ~120 µs/op | 105 allocs/op |
-| All plugins enabled | ~19 µs/op | 40 allocs/op |
-| 1000 concurrent requests | ~25 µs/req | 55 allocs/req |
-| Proxy latency overhead | ~22 µs (0.022 ms) | 51 allocs/op |
+| Bare proxy (no plugins) | ~120 us/op | 105 allocs/op |
+| All plugins enabled | ~19 us/op | 40 allocs/op |
+| 1000 concurrent requests | ~25 us/req | 55 allocs/req |
+| Proxy latency overhead | ~22 us (0.022 ms) | 51 allocs/op |
 
 **Latency overhead is 0.022ms — well under the 2ms target.**
 

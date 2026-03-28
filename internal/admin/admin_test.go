@@ -209,11 +209,7 @@ func TestImportConfig(t *testing.T) {
 plugins:
   discovery:
     enabled: false
-  rate_limits:
-    enabled: false
   analytics:
-    enabled: false
-  security:
     enabled: false
   payments:
     enabled: false
