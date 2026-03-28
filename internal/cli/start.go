@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lightlayer-dev/gateway/internal/config"
+	"github.com/lightlayer-dev/gateway/internal/plugins"
 	"github.com/lightlayer-dev/gateway/internal/proxy"
 	"github.com/spf13/cobra"
 )
@@ -47,12 +48,19 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 		return fmt.Errorf("creating proxy: %w", err)
 	}
 
+	// Build the plugin pipeline from config and wrap the proxy.
+	pipeline, err := plugins.BuildPipeline(pluginConfigs(cfg))
+	if err != nil {
+		return fmt.Errorf("building plugin pipeline: %w", err)
+	}
+	handler := pipeline.Wrap(p)
+
 	printBanner(cmd, cfg)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Listen.Host, cfg.Gateway.Listen.Port)
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: p,
+		Handler: handler,
 	}
 
 	// Admin server.
@@ -102,6 +110,11 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 			shutdownErr = err
 		}
 
+		// Close plugin pipeline.
+		if err := pipeline.Close(); err != nil {
+			slog.Error("plugin pipeline close error", "error", err)
+		}
+
 		slog.Info("shutdown complete")
 		return shutdownErr
 	case err := <-errCh:
@@ -111,10 +124,24 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 			defer cancel()
 			adminSrv.Shutdown(shutCtx)
 		}
+		pipeline.Close()
 		if err != nil && err != http.ErrServerClosed {
 			return err
 		}
 		return nil
+	}
+}
+
+// pluginConfigs converts gateway config into ordered PluginConfig entries.
+// Plugin execution order follows the design doc.
+func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
+	return []plugins.PluginConfig{
+		{Name: "security", Enabled: cfg.Plugins.Security.Enabled},
+		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled},
+		{Name: "identity", Enabled: cfg.Plugins.Identity.Enabled},
+		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
+		{Name: "payments", Enabled: cfg.Plugins.Payments.Enabled},
+		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled},
 	}
 }
 
