@@ -208,39 +208,17 @@ admin:
 
 ### Environment Variable Overrides
 
-All commonly configured options can be set via environment variables, making it easy to run in Docker without mounting a YAML file:
+The config file is the source of truth. Env vars are only for bootstrap-level overrides — the things you need before or instead of a config file:
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| **Gateway** | | |
-| `LIGHTLAYER_PORT` | `gateway.listen.port` | `8080` |
-| `LIGHTLAYER_HOST` | `gateway.listen.host` | `0.0.0.0` |
-| `LIGHTLAYER_TLS_CERT` | `gateway.listen.tls.cert` | `/path/to/cert.pem` |
-| `LIGHTLAYER_TLS_KEY` | `gateway.listen.tls.key` | `/path/to/key.pem` |
-| `LIGHTLAYER_ORIGIN_URL` | `gateway.origin.url` | `https://api.example.com` |
-| `LIGHTLAYER_ORIGIN_TIMEOUT` | `gateway.origin.timeout` | `30s` |
-| `LIGHTLAYER_ORIGIN_RETRIES` | `gateway.origin.retries` | `2` |
-| `LIGHTLAYER_ORIGIN_TLS_SKIP_VERIFY` | `gateway.origin.tls_skip_verify` | `true` |
-| **Admin** | | |
-| `LIGHTLAYER_ADMIN_ENABLED` | `admin.enabled` | `true` |
-| `LIGHTLAYER_ADMIN_PORT` | `admin.port` | `9090` |
-| `LIGHTLAYER_ADMIN_AUTH_TOKEN` | `admin.auth_token` | `secret-token` |
-| **Plugins** | | |
-| `LIGHTLAYER_DISCOVERY_ENABLED` | `plugins.discovery.enabled` | `true` |
-| `LIGHTLAYER_IDENTITY_ENABLED` | `plugins.identity.enabled` | `true` |
-| `LIGHTLAYER_IDENTITY_MODE` | `plugins.identity.mode` | `enforce` |
-| `LIGHTLAYER_RATELIMIT_ENABLED` | `plugins.rate_limits.enabled` | `true` |
-| `LIGHTLAYER_PAYMENTS_ENABLED` | `plugins.payments.enabled` | `false` |
-| `LIGHTLAYER_ANALYTICS_ENABLED` | `plugins.analytics.enabled` | `true` |
-| `LIGHTLAYER_ANALYTICS_LOG_FILE` | `plugins.analytics.log_file` | `./traffic.log` |
-| `LIGHTLAYER_SECURITY_ENABLED` | `plugins.security.enabled` | `true` |
-| `LIGHTLAYER_MCP_ENABLED` | `plugins.mcp.enabled` | `false` |
-| `LIGHTLAYER_A2A_ENABLED` | `plugins.a2a.enabled` | `false` |
-| `LIGHTLAYER_AGUI_ENABLED` | `plugins.ag_ui.enabled` | `false` |
-| `LIGHTLAYER_APIKEYS_ENABLED` | `plugins.api_keys.enabled` | `false` |
-| `LIGHTLAYER_AGENTSTXT_ENABLED` | `plugins.agents_txt.enabled` | `true` |
-| `LIGHTLAYER_OAUTH2_ENABLED` | `plugins.oauth2.enabled` | `false` |
-| `LIGHTLAYER_CONFIG` | Config file path | `./gateway.yaml` |
+| Variable | Config Path |
+|----------|-------------|
+| `LIGHTLAYER_CONFIG` | Config file path |
+| `LIGHTLAYER_PORT` | `gateway.listen.port` |
+| `LIGHTLAYER_HOST` | `gateway.listen.host` |
+| `LIGHTLAYER_ORIGIN_URL` | `gateway.origin.url` |
+| `LIGHTLAYER_ADMIN_PORT` | `admin.port` |
+
+Everything else (plugins, TLS, rate limits, payments, etc.) goes in `gateway.yaml`. For Docker, mount the config file.
 
 ---
 
