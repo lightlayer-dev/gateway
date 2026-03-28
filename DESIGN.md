@@ -2,9 +2,15 @@
 
 ## Vision
 
-A standalone reverse proxy that sits between AI agents and APIs. Zero code changes for the API owner. Configure via YAML, point agent traffic through us, and we handle identity verification, payment negotiation, discovery serving, rate limiting, and analytics — automatically.
+A standalone reverse proxy with a web dashboard that sits between AI agents and APIs. Zero code changes for the API owner. Configure via a Cloudflare-style web UI or YAML, point agent traffic through us, and we handle identity verification, payment negotiation, discovery serving, rate limiting, and analytics — automatically.
 
 Think Cloudflare, but specifically for AI agent traffic.
+
+## Business Model
+
+- **Now:** Fully self-hosted, open source (BSL 1.1 license — free to use, can't resell as a hosted service)
+- **Future:** Hosted service (we run it for you, pay per usage)
+- **License:** Business Source License 1.1 — use, modify, self-host freely. Cannot offer as a commercial managed service. Each version converts to Apache 2.0 after 4 years.
 
 ## Why Go
 
@@ -45,14 +51,44 @@ Think Cloudflare, but specifically for AI agent traffic.
 
 ### Technology Stack
 
-- **Language:** Go 1.22+
+**Backend (Go):**
 - **Proxy:** net/http + httputil.ReverseProxy
 - **Config:** gopkg.in/yaml.v3
-- **CLI:** cobra (standard Go CLI framework)
-- **Validation:** go-playground/validator or custom
+- **CLI:** cobra
 - **JWT:** golang-jwt/jwt/v5
+- **Database:** SQLite (embedded, zero-config) for config/analytics storage — no external DB required for self-hosted
 - **Logging:** slog (stdlib, structured)
 - **Testing:** stdlib testing + testify
+
+**Frontend (Dashboard UI):**
+- **Framework:** React + TypeScript (Vite)
+- **UI:** Tailwind CSS + shadcn/ui (clean, modern, Cloudflare-esque)
+- **State:** TanStack Query (server state), Zustand (client state)
+- **Charts:** Recharts (analytics visualizations)
+- **Embedded:** Built frontend is embedded in the Go binary via `embed` — single binary serves both proxy + UI
+- **API:** Go backend serves a REST API that the dashboard consumes
+
+### Dashboard UI Design
+
+The dashboard is the primary way most users interact with the gateway. Inspired by Cloudflare's dashboard:
+
+**Pages:**
+1. **Overview** — proxy status, uptime, request count, latency, origin health (like Cloudflare home)
+2. **Analytics** — agent traffic charts: requests over time, top agents, top paths, error rates, response times
+3. **Plugins** — toggle plugins on/off, configure each one (discovery, identity, rate limits, payments, security)
+4. **Discovery** — edit API name/description/capabilities, preview generated endpoints
+5. **Rate Limits** — visual rule builder: default limits, per-agent overrides, see current usage
+6. **Identity** — configure verification mode, manage trusted issuers, see agent activity
+7. **Payments** — configure paid routes, prices, see payment history
+8. **Settings** — origin URL, listen port, TLS, admin settings, export/import YAML config
+9. **Logs** — real-time request log viewer with filtering (by agent, path, status, etc.)
+
+**UI Principles:**
+- Clean, professional, minimal — no clutter (Cloudflare-inspired)
+- Every setting changeable from UI writes back to config (YAML or DB)
+- Real-time updates where possible (WebSocket for live logs/metrics)
+- Mobile-responsive
+- Dark mode support
 
 ## Configuration Design
 
@@ -276,28 +312,84 @@ gateway/
 │   │       └── security.go      # CORS, security headers
 │   ├── detection/
 │   │   └── agent.go             # Agent User-Agent detection
-│   └── admin/
-│       └── admin.go             # Admin API server
+│   ├── admin/
+│   │   ├── admin.go             # Admin/Dashboard API server
+│   │   ├── routes.go            # REST API routes for dashboard
+│   │   └── websocket.go         # WebSocket for live logs/metrics
+│   └── store/
+│       ├── store.go             # Storage interface
+│       └── sqlite.go            # SQLite implementation (config, analytics, sessions)
+├── ui/                          # Frontend dashboard (React + TypeScript)
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── index.html
+│   ├── src/
+│   │   ├── main.tsx
+│   │   ├── App.tsx
+│   │   ├── pages/
+│   │   │   ├── Overview.tsx     # Status, uptime, request count
+│   │   │   ├── Analytics.tsx    # Traffic charts, top agents
+│   │   │   ├── Plugins.tsx      # Toggle/configure plugins
+│   │   │   ├── Discovery.tsx    # Edit API description, preview endpoints
+│   │   │   ├── RateLimits.tsx   # Rule builder, usage display
+│   │   │   ├── Identity.tsx     # Verification config, agent activity
+│   │   │   ├── Payments.tsx     # Paid routes, payment history
+│   │   │   ├── Settings.tsx     # Origin, port, TLS, YAML export/import
+│   │   │   └── Logs.tsx         # Real-time request log viewer
+│   │   ├── components/
+│   │   │   ├── Layout.tsx       # Sidebar + header shell
+│   │   │   ├── Sidebar.tsx      # Navigation sidebar
+│   │   │   ├── MetricCard.tsx   # Stat card component
+│   │   │   └── Chart.tsx        # Reusable chart wrapper
+│   │   ├── lib/
+│   │   │   ├── api.ts           # API client for gateway admin endpoints
+│   │   │   └── ws.ts            # WebSocket client for live data
+│   │   └── styles/
+│   │       └── globals.css      # Tailwind imports
+│   └── public/
 ├── configs/
 │   └── gateway.yaml             # Default config template
+├── docker-compose.yml           # Full self-hosted setup
 ├── go.mod
 ├── go.sum
-├── Dockerfile
+├── Dockerfile                   # Multi-stage: build Go + build UI → single image
 ├── Makefile
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
 ├── DESIGN.md
 ├── README.md
-└── LICENSE
+└── LICENSE                      # BSL 1.1
 ```
 
 ## Distribution
 
-1. **Binary releases** — GitHub Releases with binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64
-2. **Docker** — `docker run ghcr.io/lightlayer-dev/gateway`
-3. **Homebrew** — `brew install lightlayer/tap/gateway`
-4. **Go install** — `go install github.com/lightlayer-dev/gateway/cmd/gateway@latest`
+1. **Docker Compose** (primary) — `docker compose up` spins up gateway + UI, everything included
+2. **Single binary** — Go binary with embedded UI assets, GitHub Releases (linux/darwin, amd64/arm64)
+3. **Docker image** — `docker run ghcr.io/lightlayer-dev/gateway`
+4. **Homebrew** — `brew install lightlayer/tap/gateway`
+
+### Self-Hosted Setup (docker-compose.yml)
+
+```yaml
+services:
+  gateway:
+    image: ghcr.io/lightlayer-dev/gateway:latest
+    ports:
+      - "8080:8080"   # Proxy
+      - "9090:9090"   # Dashboard UI + Admin API
+    volumes:
+      - ./gateway.yaml:/etc/lightlayer/gateway.yaml
+      - gateway-data:/var/lib/lightlayer  # SQLite DB for analytics/config
+    environment:
+      - LIGHTLAYER_CONFIG=/etc/lightlayer/gateway.yaml
+
+volumes:
+  gateway-data:
+```
+
+No external databases, no Redis, no message queues. One container, one volume. SQLite handles storage.
 
 ## Implementation Phases
 
@@ -315,24 +407,30 @@ gateway/
 - Rate limiting plugin (sliding window, per-agent)
 - Security plugin (CORS, headers, robots.txt)
 
-### Phase 3: Payments & Analytics (Cycles 11-15)
+### Phase 3: Payments, Analytics & Admin API (Cycles 11-15)
 - x402 payment plugin
-- Analytics plugin (JSONL logging, async, remote endpoint batching)
-- Admin API (health, metrics, agents, config)
+- Analytics plugin (JSONL logging, async, SQLite storage)
+- Admin REST API (health, metrics, agents, config CRUD)
 - Hot reload (SIGHUP + file watcher)
-- Dashboard integration
+- SQLite store for analytics data and config persistence
 
-### Phase 4: Polish & Distribution (Cycles 16-20)
-- CLI polish (interactive init, test command, status)
-- Dockerfile + multi-arch builds
-- Integration tests (end-to-end)
-- README + examples + quickstart
-- Performance benchmarks + final audit
+### Phase 4: Dashboard UI (Cycles 16-18)
+- React + Vite + Tailwind + shadcn/ui scaffolding
+- Dashboard pages: Overview, Analytics, Plugins, Settings, Logs
+- Admin API integration, WebSocket for live logs
+- Embed built UI in Go binary via `embed`
+
+### Phase 5: Polish & Distribution (Cycles 19-20)
+- Docker + docker-compose, integration tests
+- README, examples, BSL 1.1 license, final audit
 
 ## Success Metrics
 
-- `lightlayer-gateway init && lightlayer-gateway start` works in < 5 seconds
+- `docker compose up` → working gateway + dashboard in < 30 seconds
+- `lightlayer-gateway init && lightlayer-gateway start` → working gateway in < 5 seconds
 - < 2ms latency overhead per request
-- Single binary under 15MB
-- Docker image under 15MB (distroless)
+- Single binary (with embedded UI) under 25MB
+- Docker image under 30MB
+- Dashboard loads in < 1 second
+- Zero external dependencies for self-hosted (no Redis, no Postgres — just SQLite)
 - Zero-config discovery from YAML description
