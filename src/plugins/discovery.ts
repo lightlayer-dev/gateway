@@ -1,1 +1,0 @@
-// Discovery endpoint serving

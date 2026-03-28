@@ -1,1 +1,0 @@
-// lightlayer-gateway validate
