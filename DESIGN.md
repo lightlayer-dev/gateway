@@ -2,7 +2,7 @@
 
 ## Vision
 
-A standalone reverse proxy with a web dashboard that sits between AI agents and APIs. Zero code changes for the API owner. Configure via a Cloudflare-style web UI or YAML, point agent traffic through us, and we handle identity verification, payment negotiation, discovery serving, rate limiting, and analytics — automatically.
+A standalone reverse proxy with a web dashboard that sits between AI agents and APIs. Zero code changes for the API owner. Configure via a Cloudflare-style web UI or YAML, point agent traffic through us, and we handle the full agent lifecycle — discovery, onboarding, payments bridging, rate limiting, and analytics — automatically.
 
 Think Cloudflare, but specifically for AI agent traffic.
 
@@ -38,12 +38,16 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
    - Audit event generation
    - Three modes: log (observe), warn (log + header), enforce (reject unverified)
 
-5. **x402 Payments** — HTTP-native micropayments per the x402.org spec:
+5. **x402 Payments + Billing Bridge** — HTTP-native micropayments per the x402.org spec, with a billing webhook bridge to the origin's billing system:
    - Server declares pricing via PaymentRequirements
    - 402 response with PAYMENT-REQUIRED header
    - Client pays and retries with PAYMENT-SIGNATURE
    - Facilitator verification + settlement
    - Per-route pricing config
+   - **Billing webhook bridge:** on successful payment, gateway calls origin's billing endpoint with `{ agent_id, amount, currency, tx_hash, network, timestamp }` so the origin can update the agent's quota/tier in their own system (Stripe, DB, whatever)
+   - **429→402 interception:** when origin returns 429 (quota exceeded), gateway converts to 402 with x402 payment info
+   - The API owner never touches crypto. The agent never touches Stripe. Gateway is the adapter.
+   - **Future:** fiat x402 where agent owners pre-fund via credit card and x402 deducts from a balance instead of on-chain payment
 
 6. **OAuth2 with PKCE** *(deprecated — use Agent Onboarding)* — full authorization code flow:
    - PKCE code verifier/challenge generation
@@ -140,6 +144,7 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
 - **Agent detection is foundational** — every other plugin depends on knowing if it's an agent and which one
 - **Unified discovery config is essential** — maintaining 5 separate discovery configs is a nightmare; one source of truth
 - **Three identity modes (log/warn/enforce)** let users adopt gradually
+- **x402 alone was insufficient** — the raw x402 protocol handles crypto payments but doesn't bridge to the origin's billing system. The billing webhook bridge solves this: the gateway calls the origin's billing endpoint with payment details so the origin can update quotas/tiers in their own system (Stripe, DB, etc.). Without this bridge, the API owner would need to handle crypto directly.
 - **x402 is route-scoped** — different prices for different endpoints
 - **agents.txt > robots.txt for agents** — robots.txt is for crawlers, agents.txt is for agents (different rules, different semantics)
 - **Content negotiation is critical** — agents need JSON, humans need HTML; the gateway must detect and adapt
@@ -161,8 +166,8 @@ The gateway is the next evolution of work we already shipped in **agent-layer-ts
 │   AI Agent   │────▶│   LightLayer Gateway     │────▶│  Origin API  │
 │  (Claude,    │     │                          │     │  (any lang,  │
 │   GPT, etc.) │◀────│  ┌─────────┐ ┌────────┐ │◀────│   any stack) │
-└─────────────┘     │  │Identity │ │Payment │ │     └──────────────┘
-                    │  │  Check  │ │ x402   │ │
+└─────────────┘     │  │Onboard  │ │Payment │ │     └──────────────┘
+                    │  │  +Auth  │ │ Bridge │ │
                     │  └─────────┘ └────────┘ │
                     │  ┌─────────┐ ┌────────┐ │
                     │  │Discovery│ │Analytics│ │

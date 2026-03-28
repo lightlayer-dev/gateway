@@ -4,7 +4,10 @@ package payments
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -82,6 +85,78 @@ type SettleResponse struct {
 	TxHash      string `json:"txHash,omitempty"`
 	Network     string `json:"network,omitempty"`
 	ErrorReason string `json:"errorReason,omitempty"`
+}
+
+// ── Billing webhook ─────────────────────────────────────────────────────
+
+// BillingWebhookRequest is sent to the origin's billing endpoint after a successful x402 payment.
+type BillingWebhookRequest struct {
+	AgentID   string `json:"agent_id"`
+	Amount    string `json:"amount"`
+	Currency  string `json:"currency"`
+	TxHash    string `json:"tx_hash"`
+	Network   string `json:"network"`
+	Timestamp string `json:"timestamp"` // RFC 3339
+}
+
+// BillingWebhookClient calls the origin's billing webhook.
+type BillingWebhookClient struct {
+	URL     string
+	Secret  string // HMAC-SHA256 secret; empty = no signature
+	Timeout time.Duration
+	Client  *http.Client
+}
+
+// NewBillingWebhookClient creates a billing webhook client.
+func NewBillingWebhookClient(url, secret string, timeout time.Duration) *BillingWebhookClient {
+	return &BillingWebhookClient{
+		URL:     url,
+		Secret:  secret,
+		Timeout: timeout,
+		Client: &http.Client{
+			Timeout: timeout,
+		},
+	}
+}
+
+// Call sends payment details to the origin's billing webhook.
+func (bw *BillingWebhookClient) Call(req *BillingWebhookRequest) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal billing webhook request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest(http.MethodPost, bw.URL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create billing webhook request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	if bw.Secret != "" {
+		sig := billingSign(body, bw.Secret)
+		httpReq.Header.Set("X-Webhook-Signature", "sha256="+sig)
+	}
+
+	resp, err := bw.Client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("billing webhook call failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("billing webhook returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// billingSign computes HMAC-SHA256 of body using the given secret.
+func billingSign(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // ── Route config ────────────────────────────────────────────────────────
@@ -179,8 +254,9 @@ func (f *httpFacilitator) Settle(payload *PaymentPayload, requirements *PaymentR
 
 // Plugin implements the x402 payment flow as gateway middleware.
 type Plugin struct {
-	routes      []routeConfig
-	facilitator FacilitatorClient
+	routes         []routeConfig
+	facilitator    FacilitatorClient
+	billingWebhook *BillingWebhookClient // nil if billing webhook not configured
 }
 
 // New creates a new payments plugin.
@@ -253,6 +329,19 @@ func (p *Plugin) Init(cfg map[string]interface{}) error {
 		p.routes = append(p.routes, rc)
 	}
 
+	// Parse billing webhook config.
+	if billingURL, _ := cfg["billing_webhook"].(string); billingURL != "" {
+		billingSecret, _ := cfg["billing_webhook_secret"].(string)
+		billingTimeout := 10 * time.Second
+		if t, ok := cfg["billing_webhook_timeout"].(string); ok && t != "" {
+			if parsed, err := time.ParseDuration(t); err == nil {
+				billingTimeout = parsed
+			}
+		}
+		p.billingWebhook = NewBillingWebhookClient(billingURL, billingSecret, billingTimeout)
+		slog.Info("payments billing webhook configured", "url", billingURL)
+	}
+
 	slog.Info("payments plugin initialized",
 		"facilitator", facilitatorURL,
 		"paid_routes", len(p.routes),
@@ -265,7 +354,21 @@ func (p *Plugin) Middleware() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rc := p.matchRoute(r.Method, r.URL.Path)
 			if rc == nil {
-				// Free route — pass through.
+				// No paid route configured — but if billing webhook is set,
+				// intercept 429 from origin and convert to 402.
+				if p.billingWebhook != nil && len(p.routes) > 0 {
+					rw := &statusInterceptWriter{ResponseWriter: w}
+					next.ServeHTTP(rw, r)
+					if rw.statusCode == http.StatusTooManyRequests {
+						// Origin returned 429 (quota exceeded) — convert to 402 with
+						// payment info from the first configured route as default pricing.
+						defaultRC := &p.routes[0]
+						reqURL := requestURL(r)
+						pr := buildPaymentRequired(reqURL, defaultRC, "Quota exceeded — payment required to continue")
+						p.write402(w, pr)
+					}
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -328,7 +431,27 @@ func (p *Plugin) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			// Payment successful — set response header and forward.
+			// Payment successful — call billing webhook if configured.
+			if p.billingWebhook != nil {
+				agentID := r.Header.Get("X-Agent-ID")
+				if agentID == "" {
+					agentID = "unknown"
+				}
+				billingReq := &BillingWebhookRequest{
+					AgentID:   agentID,
+					Amount:    rc.amount,
+					Currency:  rc.asset,
+					TxHash:    settleResult.TxHash,
+					Network:   settleResult.Network,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				}
+				if err := p.billingWebhook.Call(billingReq); err != nil {
+					slog.Error("billing webhook failed", "error", err)
+					// Continue anyway — payment was already settled on-chain.
+				}
+			}
+
+			// Set response header and forward.
 			settlementJSON, _ := json.Marshal(settleResult)
 			w.Header().Set(HeaderPaymentResponse, base64.StdEncoding.EncodeToString(settlementJSON))
 
@@ -449,6 +572,30 @@ func (p *Plugin) write402(w http.ResponseWriter, pr *PaymentRequired) {
 	w.Header().Set(HeaderPaymentRequired, encoded)
 	w.WriteHeader(http.StatusPaymentRequired)
 	json.NewEncoder(w).Encode(pr)
+}
+
+// statusInterceptWriter captures the status code without writing the body,
+// allowing the payments plugin to intercept 429 responses from the origin.
+type statusInterceptWriter struct {
+	http.ResponseWriter
+	statusCode  int
+	headersSent bool
+}
+
+func (w *statusInterceptWriter) WriteHeader(code int) {
+	w.statusCode = code
+	if code != http.StatusTooManyRequests {
+		w.headersSent = true
+		w.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (w *statusInterceptWriter) Write(b []byte) (int, error) {
+	if w.statusCode == http.StatusTooManyRequests {
+		// Suppress the origin's 429 body — we'll replace it with 402.
+		return len(b), nil
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 func requestURL(r *http.Request) string {

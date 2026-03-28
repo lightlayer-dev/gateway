@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -335,6 +336,76 @@ func TestInitParsesRoutes(t *testing.T) {
 	assert.Equal(t, "0xOVERRIDE", p.routes[1].payTo)
 	assert.Equal(t, "eip155:8453", p.routes[1].network)
 	assert.Equal(t, "ETH", p.routes[1].asset)
+}
+
+func TestBillingWebhookCalledOnPayment(t *testing.T) {
+	var mu sync.Mutex
+	var received *BillingWebhookRequest
+
+	webhookServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req BillingWebhookRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		mu.Lock()
+		received = &req
+		mu.Unlock()
+
+		// Verify signature header is present.
+		assert.NotEmpty(t, r.Header.Get("X-Webhook-Signature"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookServer.Close()
+
+	fac := &mockFacilitator{
+		verifyResp: &VerifyResponse{IsValid: true},
+		settleResp: &SettleResponse{Success: true, TxHash: "0xBILLING", Network: "eip155:8453"},
+	}
+	p := newTestPlugin(testRoutes, fac)
+	p.billingWebhook = NewBillingWebhookClient(webhookServer.URL, "test-secret", 0)
+
+	handler := p.Middleware()(origin)
+
+	req := httptest.NewRequest("GET", "/api/premium/data", nil)
+	req.Header.Set(HeaderPaymentSig, makePaymentSignature(validPayload()))
+	req.Header.Set("X-Agent-ID", "claude-bot-xyz")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotNil(t, received)
+	assert.Equal(t, "claude-bot-xyz", received.AgentID)
+	assert.Equal(t, "0.01", received.Amount)
+	assert.Equal(t, "USDC", received.Currency)
+	assert.Equal(t, "0xBILLING", received.TxHash)
+}
+
+func TestOrigin429ConvertedTo402(t *testing.T) {
+	// Origin returns 429 (quota exceeded).
+	origin429 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":"quota_exceeded"}`))
+	})
+
+	p := newTestPlugin(testRoutes, &mockFacilitator{})
+	p.billingWebhook = NewBillingWebhookClient("http://example.com/billing", "", 0)
+
+	handler := p.Middleware()(origin429)
+
+	// Request to a path NOT in paid routes but origin returns 429.
+	req := httptest.NewRequest("GET", "/api/free/stuff", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusPaymentRequired, rec.Code)
+}
+
+func TestBillingSignature(t *testing.T) {
+	body := []byte(`{"agent_id":"test"}`)
+	sig := billingSign(body, "secret")
+	assert.NotEmpty(t, sig)
+	assert.Len(t, sig, 64) // SHA-256 hex
 }
 
 func TestPaymentRequiredHeaderDecodable(t *testing.T) {

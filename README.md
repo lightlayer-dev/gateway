@@ -4,7 +4,9 @@
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-BSL_1.1-blue)
 
-**A reverse proxy that makes any API agent-ready.** Zero code changes — put it in front of your API and AI agents can discover, authenticate, pay for, and interact with your service automatically.
+**A reverse proxy that makes any API agent-ready.** Zero code changes — put it in front of your API and agents can discover it, onboard themselves, pay for access, and interact with your service automatically.
+
+**Discovery + Onboarding + Payments Bridge + Analytics** — the full agent lifecycle, handled by the gateway.
 
 Think **Cloudflare, but for AI agent traffic.**
 
@@ -92,7 +94,7 @@ LightLayer Gateway sits between AI agents and your API. It automatically handles
 | **Discovery** | Serves `/.well-known/ai`, `/.well-known/agent.json`, `/llms.txt`, `/agents.txt` — so agents can find and understand your API |
 | **Agent Onboarding** | Agents self-register via `POST /agent/register` and get credentials back — no human intervention |
 | **Rate Limiting** | Per-agent sliding window rate limits with configurable overrides |
-| **Payments** | x402 micropayment negotiation — agents pay per request |
+| **Payments** | x402 micropayments with billing webhook bridge — agents pay crypto, origin gets a billing event |
 | **Analytics** | Agent traffic logging with SQLite storage and dashboard charts |
 | **Security** | CORS, HSTS, CSP, X-Content-Type-Options, and more |
 | **MCP** | Auto-generates Model Context Protocol tools from your API |
@@ -402,6 +404,55 @@ When an agent hits the API without credentials, the gateway returns a helpful 40
 ### Deprecation Notice
 
 The **identity**, **api_keys**, and **oauth2** plugins are deprecated in favor of **agent_onboarding**. They will be removed in v0.3. The agent onboarding plugin replaces gateway-level auth with a webhook-based model where credentials come from the API owner's auth system, not the gateway.
+
+---
+
+## Agent Payments
+
+The payments plugin bridges x402 crypto payments with the origin's own billing system. The API owner never touches crypto. The agent never touches Stripe. The gateway is the adapter.
+
+### Full Agent Lifecycle
+
+```
+Discovery → Onboarding → Free Tier → Payment → Paid Tier
+    │            │            │           │          │
+    ▼            ▼            ▼           ▼          ▼
+ Agent finds  Agent gets  Agent uses  Agent pays  Origin updates
+ the API via  credentials  free quota  via x402    agent's tier
+ /.well-known  via POST    until 429   (crypto)   via billing
+              /agent/      from                    webhook
+              register     origin
+```
+
+### How the Billing Bridge Works
+
+1. Agent uses free tier credentials, origin returns **429** (quota exceeded)
+2. Gateway intercepts the 429, returns **402** with x402 payment info
+3. Agent pays via x402 (crypto)
+4. Gateway verifies payment with x402 facilitator
+5. Gateway calls the origin's **billing webhook** with payment details
+6. Origin updates the agent's quota/tier in their own system (Stripe, DB, whatever)
+7. Gateway retries the original request
+
+### Configuration
+
+```yaml
+plugins:
+  payments:
+    enabled: true
+    facilitator: https://x402.org/facilitator
+    pay_to: "0xYourWalletAddress"
+    billing_webhook: https://api.example.com/api/agent-payment
+    billing_webhook_secret: ${BILLING_WEBHOOK_SECRET}
+    billing_webhook_timeout: 10s
+    routes:
+      - path: /api/premium/*
+        price: "0.01"
+        currency: USDC
+        description: "Premium API access"
+```
+
+The billing webhook receives a POST with `{ agent_id, amount, currency, tx_hash, network, timestamp }` signed with HMAC-SHA256. The origin processes the payment in their own billing system and returns 200 OK.
 
 ---
 
