@@ -1,11 +1,10 @@
 // Package discovery implements unified multi-format discovery.
 //
-// A single UnifiedDiscoveryConfig generates all five discovery formats:
-//   - /.well-known/ai       → AI manifest JSON
+// A single UnifiedDiscoveryConfig generates four discovery formats:
 //   - /.well-known/agent.json → Google A2A Agent Card
-//   - /agents.txt            → per-agent permission blocks
-//   - /llms.txt              → human-readable API description
-//   - /llms-full.txt         → auto-generated from route metadata
+//   - /agents.txt              → per-agent permission blocks (served, not enforced)
+//   - /llms.txt                → human-readable API description
+//   - /llms-full.txt           → auto-generated from route metadata
 //
 // Ported from agent-layer-ts unified-discovery.ts, a2a.ts, llms-txt.ts.
 package discovery
@@ -79,27 +78,6 @@ type A2AAgentCard struct {
 	Skills             []A2ASkill       `json:"skills"`
 }
 
-// ── AI Manifest Types ───────────────────────────────────────────────────
-
-// AIManifestAuth describes authentication in the AI manifest.
-type AIManifestAuth struct {
-	Type             string            `json:"type"`
-	AuthorizationURL string            `json:"authorization_url,omitempty"`
-	TokenURL         string            `json:"token_url,omitempty"`
-	Scopes           map[string]string `json:"scopes,omitempty"`
-}
-
-// AIManifest is the /.well-known/ai document.
-type AIManifest struct {
-	Name         string          `json:"name"`
-	Description  string          `json:"description,omitempty"`
-	OpenAPIURL   string          `json:"openapi_url,omitempty"`
-	LlmsTxtURL   string          `json:"llms_txt_url,omitempty"`
-	Auth         *AIManifestAuth `json:"auth,omitempty"`
-	Contact      *ContactInfo    `json:"contact,omitempty"`
-	Capabilities []string        `json:"capabilities,omitempty"`
-}
-
 // ContactInfo holds contact details.
 type ContactInfo struct {
 	Email string `json:"email,omitempty"`
@@ -150,10 +128,9 @@ type AgentsTxtConfig struct {
 
 // DiscoveryFormats controls which formats are generated.
 type DiscoveryFormats struct {
-	WellKnownAI *bool `json:"well_known_ai,omitempty"`
-	AgentCard   *bool `json:"agent_card,omitempty"`
-	AgentsTxt   *bool `json:"agents_txt,omitempty"`
-	LlmsTxt     *bool `json:"llms_txt,omitempty"`
+	AgentCard *bool `json:"agent_card,omitempty"`
+	AgentsTxt *bool `json:"agents_txt,omitempty"`
+	LlmsTxt   *bool `json:"llms_txt,omitempty"`
 }
 
 // UnifiedAuthConfig is auth shared across formats.
@@ -211,11 +188,6 @@ func isFormatEnabled(formats *DiscoveryFormats, format string) bool {
 		return true
 	}
 	switch format {
-	case "wellKnownAi":
-		if formats.WellKnownAI == nil {
-			return true
-		}
-		return *formats.WellKnownAI
 	case "agentCard":
 		if formats.AgentCard == nil {
 			return true
@@ -234,36 +206,6 @@ func isFormatEnabled(formats *DiscoveryFormats, format string) bool {
 	default:
 		return true
 	}
-}
-
-// generateAIManifest produces the /.well-known/ai JSON.
-func generateAIManifest(cfg *UnifiedDiscoveryConfig) *AIManifest {
-	m := &AIManifest{
-		Name:         cfg.Name,
-		Description:  cfg.Description,
-		OpenAPIURL:   cfg.OpenAPIURL,
-		Contact:      cfg.Contact,
-		Capabilities: cfg.Capabilities,
-	}
-
-	if isFormatEnabled(cfg.Formats, "llmsTxt") {
-		m.LlmsTxtURL = cfg.URL + "/llms.txt"
-	}
-
-	if cfg.Auth != nil {
-		authType := cfg.Auth.Type
-		if authType == "bearer" {
-			authType = "api_key"
-		}
-		m.Auth = &AIManifestAuth{
-			Type:             authType,
-			AuthorizationURL: cfg.Auth.AuthorizationURL,
-			TokenURL:         cfg.Auth.TokenURL,
-			Scopes:           cfg.Auth.Scopes,
-		}
-	}
-
-	return m
 }
 
 // generateAgentCard produces the /.well-known/agent.json A2A Agent Card.
@@ -525,12 +467,6 @@ func (p *Plugin) Close() error { return nil }
 // regenerate builds all enabled endpoints and caches them.
 func (p *Plugin) regenerate(cfg *UnifiedDiscoveryConfig) {
 	eps := make(map[string]*cachedEndpoint)
-
-	if isFormatEnabled(cfg.Formats, "wellKnownAi") {
-		manifest := generateAIManifest(cfg)
-		data, _ := json.MarshalIndent(manifest, "", "  ")
-		eps["/.well-known/ai"] = &cachedEndpoint{body: data, contentType: "application/json"}
-	}
 
 	if isFormatEnabled(cfg.Formats, "agentCard") {
 		card := generateAgentCard(cfg)

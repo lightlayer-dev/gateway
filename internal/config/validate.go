@@ -26,16 +26,6 @@ func Validate(cfg *Config) error {
 		errs = append(errs, err)
 	}
 
-	// Rate limit window must be positive when rate limits are enabled.
-	if cfg.Plugins.RateLimits.Enabled {
-		if cfg.Plugins.RateLimits.Default.Window.Duration <= 0 {
-			errs = append(errs, errors.New("plugins.rate_limits.default.window must be a positive duration"))
-		}
-		if cfg.Plugins.RateLimits.Default.Requests <= 0 {
-			errs = append(errs, errors.New("plugins.rate_limits.default.requests must be positive"))
-		}
-	}
-
 	// Payment routes must have required fields when payments are enabled.
 	if cfg.Plugins.Payments.Enabled {
 		for i, r := range cfg.Plugins.Payments.Routes {

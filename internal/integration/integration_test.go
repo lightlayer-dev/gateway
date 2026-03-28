@@ -14,15 +14,9 @@ import (
 
 	"github.com/lightlayer-dev/gateway/internal/config"
 	"github.com/lightlayer-dev/gateway/internal/plugins"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/a2a"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/agentstxt"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/analytics"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/discovery"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/payments"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/ratelimit"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/security"
 	"github.com/lightlayer-dev/gateway/internal/proxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,10 +49,6 @@ func buildGateway(t *testing.T, originURL string, cfgFn func(*config.Config)) ht
 	cfg.Plugins.Discovery.Name = "Test API"
 	cfg.Plugins.Discovery.Description = "Integration test API"
 	cfg.Plugins.Discovery.Version = "1.0.0"
-	cfg.Plugins.Security.Enabled = true
-	cfg.Plugins.RateLimits.Enabled = true
-	cfg.Plugins.RateLimits.Default.Requests = 1000
-	cfg.Plugins.RateLimits.Default.Window = config.Duration{Duration: time.Minute}
 	cfg.Plugins.Analytics.Enabled = true
 
 	if cfgFn != nil {
@@ -99,9 +89,7 @@ func pluginConfigs(cfg *config.Config) []plugins.PluginConfig {
 	}
 
 	return []plugins.PluginConfig{
-		{Name: "security", Enabled: cfg.Plugins.Security.Enabled},
 		{Name: "discovery", Enabled: cfg.Plugins.Discovery.Enabled, Config: discoveryCfg},
-		{Name: "rate_limits", Enabled: cfg.Plugins.RateLimits.Enabled},
 		{Name: "analytics", Enabled: cfg.Plugins.Analytics.Enabled},
 	}
 }
@@ -127,9 +115,6 @@ func TestFullPipeline(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Equal(t, "/api/test", body["path"])
 	assert.Equal(t, "GET", body["method"])
-
-	// Verify security headers were added.
-	assert.NotEmpty(t, resp.Header.Get("X-Content-Type-Options"))
 }
 
 // ── Discovery Endpoints ─────────────────────────────────────────────────────
@@ -143,7 +128,6 @@ func TestDiscoveryEndpoints(t *testing.T) {
 	defer gw.Close()
 
 	discoveryPaths := []string{
-		"/.well-known/ai",
 		"/.well-known/agent.json",
 		"/llms.txt",
 		"/agents.txt",

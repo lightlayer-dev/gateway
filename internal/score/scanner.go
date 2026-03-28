@@ -68,7 +68,6 @@ var allChecks = []CheckFn{
 	checkResponseTime,
 	checkX402,
 	checkAgentsTxt,
-	checkAGUI,
 }
 
 // Scan runs all checks against the given URL and returns a report.
@@ -134,7 +133,6 @@ func EstimateWithGateway(report *ScoreReport) int {
 		"structured-errors": 10,
 		"cors":             10,
 		"security-headers": 10,
-		"ag-ui":            5,
 	}
 
 	var totalScore, maxScore int

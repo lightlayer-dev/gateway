@@ -749,34 +749,3 @@ func checkAgentsTxt(cfg ScanConfig) CheckResult {
 	return result
 }
 
-// ── AG-UI Streaming ─────────────────────────────────────────────────────────
-
-func checkAGUI(cfg ScanConfig) CheckResult {
-	result := CheckResult{
-		ID:       "ag-ui",
-		Name:     "AG-UI Streaming",
-		MaxScore: 5,
-		Severity: SeverityFail,
-	}
-
-	paths := []string{"/ag-ui", "/api/ag-ui", "/.well-known/ag-ui"}
-
-	for _, path := range paths {
-		resp, err := safeFetch(resolveURL(cfg.URL, path), cfg)
-		if err != nil {
-			continue
-		}
-		resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode == http.StatusMethodNotAllowed {
-			result.Score = 5
-			result.Severity = SeverityPass
-			result.Message = "AG-UI streaming endpoint found"
-			return result
-		}
-	}
-
-	result.Score = 0
-	result.Message = "No AG-UI streaming endpoint found"
-	result.Suggestion = "Add AG-UI streaming support for agent frontend compatibility"
-	return result
-}

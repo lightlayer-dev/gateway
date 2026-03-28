@@ -34,23 +34,15 @@ plugins:
     #     price: "0.01"
     #     currency: USDC
 
-  rate_limits:
-    enabled: true
-    default:
-      requests: 100
-      window: 1m
-    # per_agent:
-    #   claude: { requests: 500, window: 1m }
-
   analytics:
     enabled: true
     log_file: ./agent-traffic.log
     # endpoint: https://dashboard.lightlayer.dev/api/events
     # api_key: your-key
 
-  security:
-    enabled: true
-    # cors_origins: ["*"]
+  # agent_onboarding:
+  #   enabled: false
+  #   provisioning_webhook: https://your-api.com/provision
 
 admin:
   enabled: true

@@ -13,15 +13,9 @@ import (
 
 	"github.com/lightlayer-dev/gateway/internal/config"
 	"github.com/lightlayer-dev/gateway/internal/plugins"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/a2a"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/agentstxt"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/agui"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/analytics"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/discovery"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/mcp"
 	_ "github.com/lightlayer-dev/gateway/internal/plugins/payments"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/ratelimit"
-	_ "github.com/lightlayer-dev/gateway/internal/plugins/security"
 	"github.com/lightlayer-dev/gateway/internal/proxy"
 	"github.com/stretchr/testify/require"
 )
@@ -75,10 +69,7 @@ func BenchmarkWithAllPlugins(b *testing.B) {
 	require.NoError(b, err)
 
 	pipelineCfgs := []plugins.PluginConfig{
-		{Name: "security", Enabled: true},
 		{Name: "discovery", Enabled: true},
-		{Name: "agents_txt", Enabled: true},
-		{Name: "rate_limits", Enabled: true},
 		{Name: "analytics", Enabled: true},
 	}
 
@@ -121,9 +112,7 @@ func BenchmarkConcurrent1000(b *testing.B) {
 	require.NoError(b, err)
 
 	pipelineCfgs := []plugins.PluginConfig{
-		{Name: "security", Enabled: true},
 		{Name: "discovery", Enabled: true},
-		{Name: "rate_limits", Enabled: true},
 		{Name: "analytics", Enabled: true},
 	}
 
@@ -167,9 +156,7 @@ func BenchmarkProxyLatencyOverhead(b *testing.B) {
 	require.NoError(b, err)
 
 	pipelineCfgs := []plugins.PluginConfig{
-		{Name: "security", Enabled: true},
 		{Name: "discovery", Enabled: true},
-		{Name: "rate_limits", Enabled: true},
 		{Name: "analytics", Enabled: true},
 	}
 
