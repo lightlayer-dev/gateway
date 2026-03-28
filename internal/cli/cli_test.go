@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,24 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// syncBuffer is a thread-safe bytes.Buffer for use in concurrent tests.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (sb *syncBuffer) Write(p []byte) (int, error) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.Write(p)
+}
+
+func (sb *syncBuffer) String() string {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.String()
+}
 
 func TestInitCreatesFile(t *testing.T) {
 	dir := t.TempDir()
@@ -121,7 +140,7 @@ admin:
 	cfgPath := filepath.Join(dir, "gateway.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, cfgContent, 0644))
 
-	buf := new(bytes.Buffer)
+	buf := &syncBuffer{}
 	rootCmd.SetOut(buf)
 	rootCmd.SetArgs([]string{"start", "--config", cfgPath})
 
