@@ -208,8 +208,8 @@ func (s *SQLiteStore) GetMetrics(tr TimeRange) (*Metrics, error) {
 		m.ErrorRate = float64(errCount) / float64(m.TotalRequests)
 	}
 
-	// Top agents (top 10).
-	rows, err := s.db.Query(`SELECT agent, COUNT(*) as cnt FROM events
+	// Top agents (top 10) with last_seen.
+	rows, err := s.db.Query(`SELECT agent, COUNT(*) as cnt, MAX(timestamp) as last_seen FROM events
 		WHERE timestamp >= ? AND timestamp <= ? AND agent != ''
 		GROUP BY agent ORDER BY cnt DESC LIMIT 10`, from, to)
 	if err != nil {
@@ -218,7 +218,7 @@ func (s *SQLiteStore) GetMetrics(tr TimeRange) (*Metrics, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var ac AgentCount
-		if err := rows.Scan(&ac.Agent, &ac.Count); err != nil {
+		if err := rows.Scan(&ac.Agent, &ac.Count, &ac.LastSeen); err != nil {
 			return nil, fmt.Errorf("scan agent count: %w", err)
 		}
 		m.TopAgents = append(m.TopAgents, ac)
@@ -227,17 +227,17 @@ func (s *SQLiteStore) GetMetrics(tr TimeRange) (*Metrics, error) {
 		return nil, err
 	}
 
-	// Top paths (top 10).
-	rows2, err := s.db.Query(`SELECT path, COUNT(*) as cnt FROM events
+	// Top paths (top 10) with method and avg latency.
+	rows2, err := s.db.Query(`SELECT path, method, COUNT(*) as cnt, COALESCE(AVG(duration_ms), 0) FROM events
 		WHERE timestamp >= ? AND timestamp <= ?
-		GROUP BY path ORDER BY cnt DESC LIMIT 10`, from, to)
+		GROUP BY path, method ORDER BY cnt DESC LIMIT 10`, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("metrics top paths: %w", err)
 	}
 	defer rows2.Close()
 	for rows2.Next() {
 		var pc PathCount
-		if err := rows2.Scan(&pc.Path, &pc.Count); err != nil {
+		if err := rows2.Scan(&pc.Path, &pc.Method, &pc.Count, &pc.AvgLatencyMs); err != nil {
 			return nil, fmt.Errorf("scan path count: %w", err)
 		}
 		m.TopPaths = append(m.TopPaths, pc)
@@ -262,7 +262,26 @@ func (s *SQLiteStore) GetMetrics(tr TimeRange) (*Metrics, error) {
 		}
 		m.StatusDistribution[code] = cnt
 	}
-	return m, rows3.Err()
+	if err := rows3.Err(); err != nil {
+		return nil, err
+	}
+
+	// Requests by hour.
+	rows4, err := s.db.Query(`SELECT strftime('%Y-%m-%dT%H:00:00Z', timestamp) as hour, COUNT(*) FROM events
+		WHERE timestamp >= ? AND timestamp <= ?
+		GROUP BY hour ORDER BY hour`, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("metrics requests by hour: %w", err)
+	}
+	defer rows4.Close()
+	for rows4.Next() {
+		var hc HourlyCount
+		if err := rows4.Scan(&hc.Hour, &hc.Count); err != nil {
+			return nil, fmt.Errorf("scan hourly count: %w", err)
+		}
+		m.RequestsByHour = append(m.RequestsByHour, hc)
+	}
+	return m, rows4.Err()
 }
 
 // SaveConfig persists a key-value pair.

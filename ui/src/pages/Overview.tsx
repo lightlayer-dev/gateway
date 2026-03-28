@@ -59,7 +59,7 @@ export default function Overview() {
         />
         <MetricCard
           title="Avg Response Time"
-          value={metrics?.avg_duration_ms ? `${Math.round(metrics.avg_duration_ms)}ms` : '—'}
+          value={metrics?.avg_latency_ms ? `${Math.round(metrics.avg_latency_ms)}ms` : '—'}
           icon={<Clock size={16} />}
         />
         <MetricCard
