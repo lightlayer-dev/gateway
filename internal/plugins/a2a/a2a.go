@@ -306,7 +306,10 @@ func (p *Plugin) handleMessageStream(w http.ResponseWriter, r *http.Request, req
 	p.store.UpdateStatus(task.ID, TaskStatus{State: TaskStateWorking})
 
 	// Stream the task events.
+	// Brief pause to allow StreamTask to subscribe before completion fires.
+	// In production, origin API latency provides this naturally.
 	go func() {
+		time.Sleep(5 * time.Millisecond)
 		responseMsg := Message{
 			Role: "agent",
 			Parts: []Part{{
