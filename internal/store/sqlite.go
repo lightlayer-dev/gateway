@@ -284,6 +284,81 @@ func (s *SQLiteStore) GetMetrics(tr TimeRange) (*Metrics, error) {
 	return m, rows4.Err()
 }
 
+// GetAgents returns all known agents from the agents table.
+func (s *SQLiteStore) GetAgents() ([]AgentRecord, error) {
+	rows, err := s.db.Query(`SELECT name, first_seen, last_seen, total_requests, verified
+		FROM agents ORDER BY total_requests DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("query agents: %w", err)
+	}
+	defer rows.Close()
+
+	var agents []AgentRecord
+	for rows.Next() {
+		var a AgentRecord
+		var fs, ls string
+		var verified int
+		if err := rows.Scan(&a.Name, &fs, &ls, &a.TotalRequests, &verified); err != nil {
+			return nil, fmt.Errorf("scan agent: %w", err)
+		}
+		a.FirstSeen, _ = time.Parse(time.RFC3339Nano, fs)
+		a.LastSeen, _ = time.Parse(time.RFC3339Nano, ls)
+		a.Verified = verified != 0
+		agents = append(agents, a)
+	}
+	return agents, rows.Err()
+}
+
+// GetPaymentEvents returns recent events that have payment_info set.
+func (s *SQLiteStore) GetPaymentEvents(limit int) ([]AgentEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(`SELECT id, timestamp, agent, user_agent, method, path, status_code,
+		duration_ms, content_type, response_size, identity_info, payment_info, rate_limit
+		FROM events WHERE payment_info != '' ORDER BY timestamp DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query payment events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []AgentEvent
+	for rows.Next() {
+		var e AgentEvent
+		var ts string
+		if err := rows.Scan(&e.ID, &ts, &e.Agent, &e.UserAgent, &e.Method, &e.Path,
+			&e.StatusCode, &e.DurationMs, &e.ContentType, &e.ResponseSize,
+			&e.IdentityInfo, &e.PaymentInfo, &e.RateLimit); err != nil {
+			return nil, fmt.Errorf("scan payment event: %w", err)
+		}
+		e.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// GetAgentRequestCounts returns per-agent request counts since the given time.
+func (s *SQLiteStore) GetAgentRequestCounts(since time.Time) (map[string]int64, error) {
+	ts := since.UTC().Format(time.RFC3339Nano)
+	rows, err := s.db.Query(`SELECT agent, COUNT(*) FROM events
+		WHERE timestamp >= ? AND agent != '' GROUP BY agent`, ts)
+	if err != nil {
+		return nil, fmt.Errorf("agent request counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var agent string
+		var cnt int64
+		if err := rows.Scan(&agent, &cnt); err != nil {
+			return nil, fmt.Errorf("scan agent count: %w", err)
+		}
+		counts[agent] = cnt
+	}
+	return counts, rows.Err()
+}
+
 // SaveConfig persists a key-value pair.
 func (s *SQLiteStore) SaveConfig(key, value string) error {
 	s.mu.Lock()

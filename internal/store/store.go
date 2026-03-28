@@ -83,6 +83,15 @@ type AgentRecord struct {
 	Verified      bool      `json:"verified"`
 }
 
+// RateLimitUsage tracks an agent's current rate limit consumption.
+type RateLimitUsage struct {
+	Agent    string  `json:"agent"`
+	Used     int64   `json:"used"`
+	Limit    int     `json:"limit"`
+	Window   string  `json:"window"`
+	Percent  float64 `json:"percent"`
+}
+
 // Store is the persistence interface for analytics events and configuration.
 type Store interface {
 	// SaveEvent persists a single analytics event.
@@ -93,6 +102,15 @@ type Store interface {
 
 	// GetMetrics returns aggregated metrics for the given time range.
 	GetMetrics(timeRange TimeRange) (*Metrics, error)
+
+	// GetAgents returns all known agents from the agents table.
+	GetAgents() ([]AgentRecord, error)
+
+	// GetPaymentEvents returns events that have payment_info set.
+	GetPaymentEvents(limit int) ([]AgentEvent, error)
+
+	// GetAgentRequestCounts returns request counts per agent within a time window.
+	GetAgentRequestCounts(since time.Time) (map[string]int64, error)
 
 	// SaveConfig persists a configuration key-value pair.
 	SaveConfig(key, value string) error
