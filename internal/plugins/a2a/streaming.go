@@ -70,6 +70,10 @@ func (s *SSEWriter) WriteEvent(eventType string, data interface{}) error {
 
 // StreamTask streams task events via SSE until the task reaches a terminal state.
 func StreamTask(ctx context.Context, store *TaskStore, taskID string, sse *SSEWriter) error {
+	// Subscribe BEFORE reading state to avoid missing events from concurrent updates.
+	ch := store.Subscribe(taskID)
+	defer store.Unsubscribe(taskID, ch)
+
 	// Send current state first.
 	task, ok := store.GetTask(taskID)
 	if !ok {
@@ -98,10 +102,6 @@ func StreamTask(ctx context.Context, store *TaskStore, taskID string, sse *SSEWr
 	if task.Status.State.IsTerminal() {
 		return nil
 	}
-
-	// Subscribe for live updates.
-	ch := store.Subscribe(taskID)
-	defer store.Unsubscribe(taskID, ch)
 
 	for {
 		select {
