@@ -12,6 +12,75 @@ Think Cloudflare, but specifically for AI agent traffic.
 - **Future:** Hosted service (we run it for you, pay per usage)
 - **License:** Business Source License 1.1 — use, modify, self-host freely. Cannot offer as a commercial managed service. Each version converts to Apache 2.0 after 4 years.
 
+## Prior Art — What We Already Built
+
+The gateway is the next evolution of work we already shipped in **agent-layer-ts** and **agent-layer-python** — middleware libraries that add agent-friendliness to existing web frameworks. Everything below was built, tested, and battle-tested. The gateway takes these learnings and moves them from "add to your code" to "put in front of your code."
+
+### Features proven in agent-layer (port ALL of these to the gateway):
+
+1. **Structured Error Envelopes** — consistent JSON error format for agents: `{type, code, message, status, is_retriable, retry_after, param, docs_url}`. Agents need machine-readable errors, not HTML 500 pages.
+
+2. **Agent Detection** — User-Agent pattern matching for 18+ known AI agents: ChatGPT, GPTBot, ClaudeBot, Anthropic, PerplexityBot, Cohere, Bytespider, Amazonbot, Applebot, Meta-ExternalAgent, etc. This is the foundation — the gateway needs to know it's talking to an agent.
+
+3. **Unified Discovery** — single config generates ALL discovery formats simultaneously:
+   - `/.well-known/ai` (AI manifest)
+   - `/.well-known/agent.json` (Google A2A Agent Card)
+   - `/agents.txt` (robots.txt-style permissions for AI agents — per-agent rules, rate limits, preferred interface, auth requirements)
+   - `/llms.txt` + `/llms-full.txt` (LLM-oriented documentation)
+   This is the killer feature. One YAML config → five machine-readable discovery endpoints.
+
+4. **Agent Identity (IETF draft-klrc-aiagent-auth-00)** — not just JWT verification, but full SPIFFE/WIMSE workload identity:
+   - SPIFFE ID parsing (`spiffe://trust-domain/path`)
+   - Scoped authorization policies (agent patterns, trust domains, required scopes, path/method matching)
+   - Delegated access detection (agent acting on behalf of a user)
+   - Audit event generation
+   - Three modes: log (observe), warn (log + header), enforce (reject unverified)
+
+5. **x402 Payments** — HTTP-native micropayments per the x402.org spec:
+   - Server declares pricing via PaymentRequirements
+   - 402 response with PAYMENT-REQUIRED header
+   - Client pays and retries with PAYMENT-SIGNATURE
+   - Facilitator verification + settlement
+   - Per-route pricing config
+
+6. **OAuth2 with PKCE** — full authorization code flow:
+   - PKCE code verifier/challenge generation
+   - `/.well-known/oauth-authorization-server` discovery endpoint
+   - Token exchange, refresh, and validation with scope checking
+   - Zero external dependencies (Web Crypto API)
+
+7. **MCP Server** — auto-generate Model Context Protocol tool definitions from API routes:
+   - Route metadata → MCP tool definitions (name, description, JSON Schema input)
+   - JSON-RPC 2.0 server handling initialize, tools/list, tools/call
+   - Enables AI agents to discover and call API endpoints via MCP
+
+8. **AG-UI Protocol** — Server-Sent Events streaming for agent UIs (CopilotKit, Google ADK):
+   - Lifecycle events (RUN_STARTED, RUN_FINISHED, RUN_ERROR)
+   - Text streaming (TEXT_MESSAGE_START/CONTENT/END)
+   - Tool call streaming (TOOL_CALL_START/ARGS/END/RESULT)
+   - State management (STATE_SNAPSHOT, STATE_DELTA)
+
+9. **API Key Auth** — simple key-based authentication as an alternative to OAuth2/JWT
+
+10. **Analytics** — agent traffic telemetry with batch flushing:
+    - Per-request: agent name, method, path, status, duration, content type, response size
+    - Batch flush to endpoint or local callback
+    - Agent detection integrated
+
+11. **Security Headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, CSP, Permissions-Policy
+
+12. **robots.txt** — AI-agent-aware robots.txt generation with explicit rules for known AI agents
+
+13. **agents.txt** — per-agent access control with rate limits, preferred interface (REST/MCP/GraphQL/A2A), and auth requirements
+
+### Key Architecture Decisions from agent-layer:
+- **Plugin ordering matters** — security → discovery → identity → rate limits → payments → analytics → proxy (proven in both TS and Python)
+- **Agent detection is foundational** — every other plugin depends on knowing if it's an agent and which one
+- **Unified discovery config is essential** — maintaining 5 separate discovery configs is a nightmare; one source of truth
+- **Three identity modes (log/warn/enforce)** let users adopt gradually
+- **x402 is route-scoped** — different prices for different endpoints
+- **agents.txt > robots.txt for agents** — robots.txt is for crawlers, agents.txt is for agents (different rules, different semantics)
+
 ## Why Go
 
 - **Purpose-built for proxies** — Caddy, Traefik, Kong are all Go. net/http is best-in-class.
@@ -155,6 +224,38 @@ plugins:
   security:
     enabled: true
     # cors_origins: ["*"]
+    # hsts_max_age: 31536000
+    # frame_options: DENY
+    # content_type_options: nosniff
+    # referrer_policy: strict-origin-when-cross-origin
+
+  oauth2:
+    enabled: false
+    # client_id: your-client-id
+    # authorization_endpoint: https://auth.example.com/authorize
+    # token_endpoint: https://auth.example.com/token
+    # scopes:
+    #   read: "Read access"
+    #   write: "Write access"
+
+  mcp:
+    enabled: false
+    # name: "My API"
+    # version: "1.0.0"
+    # instructions: "REST API for widgets"
+    # Auto-generates MCP tools from discovery capabilities
+
+  agents_txt:
+    enabled: true
+    # rules:
+    #   - agent: "*"
+    #     allow: ["/api/*"]
+    #     deny: ["/internal/*"]
+    #     rate_limit: { max: 100, window_seconds: 60 }
+    #     preferred_interface: rest  # rest | mcp | graphql | a2a
+    #   - agent: "ClaudeBot"
+    #     allow: ["/api/*", "/docs/*"]
+    #     rate_limit: { max: 500, window_seconds: 60 }
 
 admin:
   enabled: true
@@ -206,7 +307,10 @@ lightlayer-gateway status
     ✓ identity    enforcing agent verification
     ✓ rate_limits 100 req/min default
     ✓ analytics   logging to ./agent-traffic.log
-    ✓ security    CORS + robots.txt
+    ✓ security    CORS + security headers + robots.txt
+    ✓ oauth2      PKCE flow + discovery endpoint
+    ✓ mcp         MCP tool server (auto-generated from routes)
+    ✓ agents_txt  per-agent access control
 
   Ready to proxy agent traffic.
 ```
@@ -262,13 +366,16 @@ handler := security.Middleware()(
 
 ### Plugin Execution Order
 
-1. **Security** — CORS, security headers
-2. **Discovery** — intercept well-known paths
-3. **Identity** — verify agent credentials
-4. **Rate Limits** — per-agent rate limiting
-5. **Payments** — x402 payment negotiation
-6. **Analytics** — log request (non-blocking)
-7. **→ Reverse Proxy → Origin**
+1. **Security** — CORS, security headers, HSTS, CSP
+2. **Discovery** — intercept /.well-known/ai, /.well-known/agent.json, /llms.txt, /agents.txt
+3. **OAuth2** — intercept /.well-known/oauth-authorization-server, /authorize, /token
+4. **MCP** — intercept /mcp endpoint (JSON-RPC 2.0)
+5. **Agents.txt** — enforce per-agent path access rules
+6. **Identity** — verify agent credentials (JWT/SPIFFE/WIMSE)
+7. **Rate Limits** — per-agent rate limiting (sliding window)
+8. **Payments** — x402 payment negotiation
+9. **Analytics** — log request (non-blocking, async flush)
+10. **→ Reverse Proxy → Origin** (with structured error wrapping on failures)
 
 ## File Structure
 
@@ -308,8 +415,14 @@ gateway/
 │   │   │   └── payments.go      # x402 payment handling
 │   │   ├── analytics/
 │   │   │   └── analytics.go     # Traffic analytics
-│   │   └── security/
-│   │       └── security.go      # CORS, security headers
+│   │   ├── security/
+│   │   │   └── security.go      # CORS, security headers, HSTS, CSP
+│   │   ├── oauth2/
+│   │   │   └── oauth2.go        # OAuth2 PKCE flow + discovery
+│   │   ├── mcp/
+│   │   │   └── mcp.go           # MCP JSON-RPC server (auto-generated tools)
+│   │   └── agentstxt/
+│   │       └── agentstxt.go     # agents.txt generation + enforcement
 │   ├── detection/
 │   │   └── agent.go             # Agent User-Agent detection
 │   ├── admin/
@@ -402,14 +515,19 @@ No external databases, no Redis, no message queues. One container, one volume. S
 
 ### Phase 2: Discovery & Identity Plugins (Cycles 6-10)
 - Plugin interface + pipeline builder
-- Discovery plugin (well-known endpoints)
-- Agent detection + Identity plugin (JWT verification, modes)
-- Rate limiting plugin (sliding window, per-agent)
-- Security plugin (CORS, headers, robots.txt)
+- Discovery plugin (unified: /.well-known/ai, /.well-known/agent.json, /llms.txt — from agent-layer unified-discovery)
+- Agent detection (18+ known agents — port from agent-layer analytics.ts patterns)
+- Identity plugin (JWT/SPIFFE/WIMSE verification, 3 modes, authz policies — from agent-layer agent-identity.ts)
+- Rate limiting plugin (sliding window, per-agent — from agent-layer rate-limit.ts)
+- Security plugin (CORS, HSTS, CSP, all security headers — from agent-layer security-headers.ts)
+- Structured error envelopes on all gateway errors (from agent-layer errors.ts)
 
-### Phase 3: Payments, Analytics & Admin API (Cycles 11-15)
-- x402 payment plugin
-- Analytics plugin (JSONL logging, async, SQLite storage)
+### Phase 3: Payments, Auth, MCP & Admin API (Cycles 11-15)
+- x402 payment plugin (route-scoped pricing, facilitator verify/settle — from agent-layer x402.ts)
+- agents.txt plugin (per-agent access rules, rate limits, preferred interface — from agent-layer agents-txt.ts)
+- OAuth2 plugin (PKCE flow, discovery endpoint — from agent-layer oauth2.ts)
+- MCP plugin (auto-generate tools from discovery config, JSON-RPC server — from agent-layer mcp.ts)
+- Analytics plugin (JSONL logging, async flush, SQLite storage — from agent-layer analytics.ts)
 - Admin REST API (health, metrics, agents, config CRUD)
 - Hot reload (SIGHUP + file watcher)
 - SQLite store for analytics data and config persistence
