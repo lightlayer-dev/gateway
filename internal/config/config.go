@@ -162,10 +162,44 @@ type AnalyticsConfig struct {
 	APIKey   string `yaml:"api_key,omitempty"`
 }
 
-// SecurityConfig controls CORS and security headers.
+// SecurityConfig controls CORS, security headers, and robots.txt.
 type SecurityConfig struct {
 	Enabled     bool     `yaml:"enabled"`
 	CORSOrigins []string `yaml:"cors_origins,omitempty"`
+	CORSMethods []string `yaml:"cors_methods,omitempty"`
+	CORSHeaders []string `yaml:"cors_headers,omitempty"`
+	CORSCredentials bool `yaml:"cors_credentials,omitempty"`
+	CORSMaxAge  int      `yaml:"cors_max_age,omitempty"`
+
+	// Security headers
+	HSTSMaxAge            int    `yaml:"hsts_max_age,omitempty"`
+	HSTSIncludeSubdomains *bool  `yaml:"hsts_include_subdomains,omitempty"`
+	FrameOptions          string `yaml:"frame_options,omitempty"`   // DENY, SAMEORIGIN, or "" to disable
+	ContentTypeOptions    string `yaml:"content_type_options,omitempty"` // nosniff or "" to disable
+	ReferrerPolicy        string `yaml:"referrer_policy,omitempty"`
+	CSP                   string `yaml:"csp,omitempty"`
+	PermissionsPolicy     string `yaml:"permissions_policy,omitempty"`
+
+	// robots.txt
+	RobotsTxt *RobotsTxtConfig `yaml:"robots_txt,omitempty"`
+}
+
+// RobotsTxtConfig controls robots.txt generation.
+type RobotsTxtConfig struct {
+	Rules          []RobotsTxtRule `yaml:"rules,omitempty"`
+	Sitemaps       []string        `yaml:"sitemaps,omitempty"`
+	IncludeAIAgents *bool          `yaml:"include_ai_agents,omitempty"`
+	AIAgentPolicy  string          `yaml:"ai_agent_policy,omitempty"` // allow or disallow
+	AIAllow        []string        `yaml:"ai_allow,omitempty"`
+	AIDisallow     []string        `yaml:"ai_disallow,omitempty"`
+}
+
+// RobotsTxtRule defines a single robots.txt rule block.
+type RobotsTxtRule struct {
+	UserAgent  string   `yaml:"user_agent"`
+	Allow      []string `yaml:"allow,omitempty"`
+	Disallow   []string `yaml:"disallow,omitempty"`
+	CrawlDelay int      `yaml:"crawl_delay,omitempty"`
 }
 
 // AdminConfig controls the admin API server.
