@@ -120,6 +120,9 @@ func startServer(cmd *cobra.Command, cfgPath string, verbose bool) error {
 		gw.adminSrv.SetUIAssets(UIAssets)
 		gw.adminSrv.ConfigPath = cfgPath
 		gw.adminSrv.ReloadFunc = gw.reload
+		if demoModeEnabled {
+			gw.adminSrv.SetDemoMode(demoModeAPIURL)
+		}
 		if err := gw.adminSrv.Start(); err != nil {
 			slog.Error("admin server start failed", "error", err)
 		}

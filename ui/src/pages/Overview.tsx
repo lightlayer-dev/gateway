@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchStatus, fetchMetrics } from '../lib/api'
+import { fetchStatus, fetchMetrics, fetchDemoStatus } from '../lib/api'
 import MetricCard from '../components/MetricCard'
+import DemoBanner from '../components/DemoBanner'
 import Chart from '../components/Chart'
 import { Activity, Users, Clock, AlertTriangle, Circle, Link } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
@@ -11,6 +12,12 @@ export default function Overview() {
     queryKey: ['metrics'],
     queryFn: () => fetchMetrics('24h'),
   })
+  const { data: demoStatus } = useQuery({
+    queryKey: ['demo-status'],
+    queryFn: fetchDemoStatus,
+  })
+
+  const isDemo = demoStatus?.demo_mode ?? false
 
   const chartData = (metrics?.requests_by_hour ?? []).map((h) => ({
     time: h.hour,
@@ -21,6 +28,9 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
+      {/* Demo mode banner */}
+      {isDemo && <DemoBanner />}
+
       {/* Status banner */}
       <div className="bg-[var(--color-bg)] rounded-lg border border-[var(--color-border)] p-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -34,7 +44,13 @@ export default function Overview() {
               Gateway {isHealthy ? 'Running' : 'Offline'}
             </div>
             <div className="text-sm text-[var(--color-text-secondary)]">
-              {status?.origin_url ?? '—'} &middot; Uptime: {status?.uptime ?? '—'}
+              {status?.origin_url ?? '—'}
+              {isDemo && (
+                <span className="ml-2 inline-flex items-center rounded bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-xs font-medium text-[var(--color-warning)]">
+                  Demo API
+                </span>
+              )}
+              {' '}&middot; Uptime: {status?.uptime ?? '—'}
             </div>
           </div>
         </div>

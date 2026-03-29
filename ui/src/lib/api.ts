@@ -172,3 +172,13 @@ export const fetchAgentActivity = () =>
 
 export const fetchPaymentHistory = (limit = 50) =>
   request<PaymentHistoryResponse>(`/api/payments/history?limit=${limit}`)
+
+// ── Demo Mode ─────────────────────────────────────────────────────────────
+
+export interface DemoStatusResponse {
+  demo_mode: boolean
+  demo_api_url: string
+}
+
+export const fetchDemoStatus = () =>
+  request<DemoStatusResponse>('/api/demo/status')
