@@ -43,6 +43,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Payment history
 	mux.HandleFunc("GET /api/payments/history", s.handlePaymentHistory)
 
+	// Demo mode
+	mux.HandleFunc("GET /api/demo/status", s.handleDemoStatus)
+
 	// WebSocket
 	mux.HandleFunc("GET /api/ws/logs", s.handleWSLogs)
 }
@@ -509,6 +512,15 @@ func (s *Server) handlePaymentHistory(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"payments": events,
+	})
+}
+
+// ── Demo Status ──────────────────────────────────────────────────────────
+
+func (s *Server) handleDemoStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"demo_mode":    s.DemoMode,
+		"demo_api_url": s.DemoAPIURL,
 	})
 }
 

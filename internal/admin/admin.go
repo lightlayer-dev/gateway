@@ -37,6 +37,12 @@ type Server struct {
 
 	// ConfigPath is the path to the active config file.
 	ConfigPath string
+
+	// DemoMode indicates the gateway was started with `gateway demo`.
+	DemoMode bool
+
+	// DemoAPIURL is the URL of the built-in demo API (when DemoMode is true).
+	DemoAPIURL string
 }
 
 // NewServer creates a new admin server.
@@ -159,6 +165,12 @@ func (s *Server) SetStore(st store.Store) {
 // LogHub returns the live log hub for broadcasting events.
 func (s *Server) LogHub() *LogHub {
 	return s.logHub
+}
+
+// SetDemoMode marks the server as running in demo mode.
+func (s *Server) SetDemoMode(url string) {
+	s.DemoMode = true
+	s.DemoAPIURL = url
 }
 
 // authMiddleware checks the admin auth token if configured.
