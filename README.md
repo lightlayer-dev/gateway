@@ -538,10 +538,25 @@ lightlayer-gateway dev --config gateway.yaml
 
 ---
 
+## Conformance Test Suite
+
+The `conformance/` directory contains a language-agnostic HTTP conformance test suite that can verify **any** server implementing the agent-layer spec — regardless of language or framework.
+
+```bash
+cd conformance
+npm install
+BASE_URL=http://localhost:8080 npm test
+```
+
+It tests all agent-layer endpoints: discovery (`agents.txt`, `llms.txt`, `llms-full.txt`), well-known metadata (`/.well-known/ai`, `agent.json`), MCP JSON-RPC, rate limiting, error envelopes, agent detection, OAuth2 discovery, and AG-UI streaming. See [`conformance/README.md`](conformance/README.md) for details.
+
+---
+
 ## See Also
 
 - **[agent-layer-ts](https://github.com/lightlayer-dev/agent-layer-ts)** — Code-level middleware for Express, Koa, Hono, and Fastify (MIT)
 - **[agent-layer-python](https://github.com/lightlayer-dev/agent-layer-python)** — Code-level middleware for FastAPI, Flask, and Django (MIT)
+- **[agent-layer-go](https://github.com/lightlayer-dev/agent-layer-go)** — Code-level middleware for net/http, Chi, Gin, and Echo (MIT)
 - **[agent-bench](https://github.com/lightlayer-dev/agent-bench)** — Benchmark CLI for agent-readiness scoring
 - **[company.lightlayer.dev](https://company.lightlayer.dev)** — Blog and research on the agent-native web
 

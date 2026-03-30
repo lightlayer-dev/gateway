@@ -1,0 +1,17 @@
+{
+  "name": "@lightlayer/conformance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Language-agnostic HTTP conformance test suite for the LightLayer agent-layer spec",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "conformance": "vitest run --reporter=verbose"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "eventsource-parser": "^3.0.0"
+  }
+}
